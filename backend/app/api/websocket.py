@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -108,7 +109,8 @@ async def case_websocket(websocket: WebSocket) -> None:
 			if evt.get("data", {}).get("code") == "pipeline_failure":
 				has_pipeline_failure = True
 			await websocket.send_json(evt)
-			await asyncio.sleep(0.06)
+			pace = float(os.getenv("ECHO_WS_PACE", "0.38"))
+			await asyncio.sleep(pace)
 
 		await worker_task
 

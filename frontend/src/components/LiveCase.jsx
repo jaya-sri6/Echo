@@ -33,7 +33,7 @@ export default function LiveCase() {
       <div className="flow">
         {caseData.steps.map((step) => (
           <div key={step} className="flow-step">
-            <strong>✓</strong> {step}
+            <strong>[OK]</strong> {step}
           </div>
         ))}
       </div>
