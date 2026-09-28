@@ -33,7 +33,7 @@ class HindsightClient:
         self.base_url = (base_url or os.getenv("HINDSIGHT_API_URL") or "http://localhost:8888").rstrip("/")
         self.api_key = api_key if api_key is not None else os.getenv("HINDSIGHT_API_KEY")
         self.bank_id = bank_id or os.getenv("HINDSIGHT_BANK_ID", "support-experiences")
-        self.timeout = timeout if timeout is not None else float(os.getenv("HINDSIGHT_TIMEOUT_SECONDS", "1.5"))
+        self.timeout = timeout if timeout is not None else float(os.getenv("HINDSIGHT_TIMEOUT_SECONDS", "8.0"))
 
     def retain(self, content: str, *, document_id: str | None = None) -> dict[str, Any]:
         item: dict[str, Any] = {"content": content}

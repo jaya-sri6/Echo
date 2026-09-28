@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -16,15 +17,23 @@ async def _send_event(
 	status: str,
 	message: str,
 	data: dict[str, Any] | None = None,
+	event: str | None = None,
+	step_index: int | None = None,
+	duration_ms: float = 0.0,
 ) -> None:
-	await websocket.send_json(
-		{
-			"agent": agent,
-			"status": status,
-			"message": message,
-			"data": data or {},
-		}
-	)
+	payload = {
+		"agent": agent,
+		"status": status,
+		"message": message,
+		"data": data or {},
+	}
+	if event is not None:
+		payload["event"] = event
+	if step_index is not None:
+		payload["step_index"] = step_index
+	if duration_ms:
+		payload["duration_ms"] = duration_ms
+	await websocket.send_json(payload)
 
 
 @router.websocket("/ws/case")
@@ -36,10 +45,12 @@ async def case_websocket(websocket: WebSocket) -> None:
 		except (ValueError, TypeError):
 			await _send_event(
 				websocket,
-				"completed",
-				"failed",
-				"Expected a JSON object containing a customer message.",
-				{"code": "invalid_input"},
+				agent="completed",
+				status="failed",
+				message="Expected a JSON object containing a customer message.",
+				data={"code": "invalid_input"},
+				event="pipeline_completed",
+				step_index=0,
 			)
 			await websocket.close(code=1003)
 			return
@@ -47,42 +58,65 @@ async def case_websocket(websocket: WebSocket) -> None:
 		if not isinstance(payload, dict) or not isinstance(payload.get("message"), str) or not payload["message"].strip():
 			await _send_event(
 				websocket,
-				"completed",
-				"failed",
-				"A non-empty message string is required.",
-				{"code": "invalid_input"},
+				agent="completed",
+				status="failed",
+				message="A non-empty message string is required.",
+				data={"code": "invalid_input"},
+				event="pipeline_completed",
+				step_index=0,
 			)
 			await websocket.close(code=1008)
 			return
 
-		await _send_event(
-			websocket,
-			"conversation_agent",
-			"started",
-			"Customer message received; starting the Echo pipeline.",
-		)
-		try:
-			result = await run_in_threadpool(EchoPipeline.run, payload["message"])
-		except Exception:
-			await _send_event(
-				websocket,
-				"completed",
-				"failed",
-				"The Echo pipeline could not complete.",
-				{"code": "pipeline_failure"},
-			)
-			await websocket.close(code=1011)
-			return
+		loop = asyncio.get_running_loop()
+		queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
-		completed = result.status == "COMPLETE"
-		await _send_event(
-			websocket,
-			"completed",
-			"completed" if completed else "failed",
-			"Echo pipeline completed." if completed else "Echo pipeline finished without an approved recommendation.",
-			result.model_dump(mode="json"),
-		)
-		await websocket.close(code=1000)
+		def on_pipeline_event(evt: dict[str, Any]) -> None:
+			loop.call_soon_threadsafe(queue.put_nowait, evt)
+
+		async def run_worker() -> None:
+			try:
+				await run_in_threadpool(
+					EchoPipeline.run,
+					payload["message"],
+					retain_outcome=True,
+					on_event=on_pipeline_event,
+				)
+			except Exception:
+				loop.call_soon_threadsafe(
+					queue.put_nowait,
+					{
+						"step_index": 0,
+						"event": "pipeline_completed",
+						"agent": "completed",
+						"status": "failed",
+						"message": "The Echo pipeline could not complete.",
+						"duration_ms": 0.0,
+						"data": {"code": "pipeline_failure"},
+					},
+				)
+			finally:
+				loop.call_soon_threadsafe(queue.put_nowait, None)
+
+		worker_task = asyncio.create_task(run_worker())
+
+		has_pipeline_failure = False
+		while True:
+			evt = await queue.get()
+			if evt is None:
+				break
+			if evt.get("data", {}).get("code") == "pipeline_failure":
+				has_pipeline_failure = True
+			await websocket.send_json(evt)
+			await asyncio.sleep(0.06)
+
+		await worker_task
+
+		if has_pipeline_failure:
+			await websocket.close(code=1011)
+		else:
+			await websocket.close(code=1000)
+
 	except WebSocketDisconnect:
 		return
 

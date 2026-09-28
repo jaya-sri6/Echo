@@ -34,6 +34,12 @@ class ConversationAgent:
 
 		if "nightly" in normalized and ("batch" in normalized or "export" in normalized):
 			values["workload"] = "nightly_batch"
+		elif "daily" in normalized and ("batch" in normalized or "export" in normalized):
+			values["workload"] = "daily_batch"
+		elif "interactive" in normalized:
+			values["workload"] = "interactive"
+		elif "batch" in normalized:
+			values["workload"] = "batch"
 
 		if re.search(r"\b(async|asynchronous)\b", normalized):
 			values["execution_mode"] = "async"

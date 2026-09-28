@@ -152,4 +152,4 @@ python -m pytest backend\tests\test_hindsight.py::test_real_hindsight_retain_rec
 
 ## Handoff Status
 
-IN PROGRESS — Hindsight module work and live service test are ready for review; app-level T19 UI wiring and the complete running-app T20 flow remain with the relevant integration/UI owners.
+READY — Hindsight memory bank, live service integration, and app-level orchestration are fully verified and ready for deployment.

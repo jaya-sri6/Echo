@@ -1,0 +1,138 @@
+[
+  {
+    "case_id": "BM-01",
+    "name": "Large Nightly Batch Timeout",
+    "category": "memory_helpful",
+    "customer_message": "Customer's 600 GB nightly export keeps timing out under high concurrency in sync mode.",
+    "context": {
+      "export_size_gb": 600.0,
+      "concurrency": "high",
+      "workload": "nightly_batch",
+      "execution_mode": "sync",
+      "problem_type": "large_export_timeout"
+    },
+    "naive_baseline_action": "increase_timeout",
+    "expected_memory_action": "async_chunked_export",
+    "expected_applicability": "MATCH",
+    "description": "Large 600 GB batch export where naive timeout increase fails due to thread saturation. Memory recalls EXP-002 and redirects to async chunking."
+  },
+  {
+    "case_id": "BM-02",
+    "name": "High Concurrency Monolithic Batch",
+    "category": "memory_helpful",
+    "customer_message": "Customer's 520 GB nightly export keeps timing out under high concurrency in sync mode.",
+    "context": {
+      "export_size_gb": 520.0,
+      "concurrency": "high",
+      "workload": "nightly_batch",
+      "execution_mode": "sync",
+      "problem_type": "large_export_timeout"
+    },
+    "naive_baseline_action": "increase_timeout",
+    "expected_memory_action": "async_chunked_export",
+    "expected_applicability": "MATCH",
+    "description": "520 GB batch job experiencing connection exhaustion. Memory guides system to async chunking to stabilize throughput."
+  },
+  {
+    "case_id": "BM-03",
+    "name": "Heavy Batch Window Contention",
+    "category": "memory_helpful",
+    "customer_message": "Customer's 450 GB nightly export keeps timing out under medium concurrency in sync mode.",
+    "context": {
+      "export_size_gb": 450.0,
+      "concurrency": "medium",
+      "workload": "nightly_batch",
+      "execution_mode": "sync",
+      "problem_type": "large_export_timeout"
+    },
+    "naive_baseline_action": "increase_timeout",
+    "expected_memory_action": "schedule_off_peak",
+    "expected_applicability": "PARTIAL_MATCH",
+    "description": "450 GB nightly batch export where memory identifies off-peak scheduling as the optimal remediation to clear resource contention."
+  },
+  {
+    "case_id": "BM-04",
+    "name": "Direct Company Mistake Repeat Prevention",
+    "category": "historical_failure",
+    "customer_message": "Customer's 550 GB nightly export keeps timing out under high concurrency in sync mode.",
+    "context": {
+      "export_size_gb": 550.0,
+      "concurrency": "high",
+      "workload": "nightly_batch",
+      "execution_mode": "sync",
+      "problem_type": "large_export_timeout"
+    },
+    "naive_baseline_action": "increase_timeout",
+    "expected_memory_action": "async_chunked_export",
+    "expected_applicability": "MATCH",
+    "description": "550 GB export where increase_timeout previously caused prolonged outage (EXP-007). Echo prevents repeating the failed action."
+  },
+  {
+    "case_id": "BM-05",
+    "name": "Repetitive Retry Thrashed Workload",
+    "category": "historical_failure",
+    "customer_message": "Customer's 350 GB nightly export keeps timing out under medium concurrency in sync mode.",
+    "context": {
+      "export_size_gb": 350.0,
+      "concurrency": "medium",
+      "workload": "nightly_batch",
+      "execution_mode": "sync",
+      "problem_type": "large_export_timeout"
+    },
+    "naive_baseline_action": "retry_with_backoff",
+    "expected_memory_action": "schedule_off_peak",
+    "expected_applicability": "PARTIAL_MATCH",
+    "description": "350 GB export where naive retry loops worsen lock thrashing (EXP-008 failure). Memory selects off-peak execution."
+  },
+  {
+    "case_id": "BM-06",
+    "name": "Small Interactive Export Boundary Check",
+    "category": "context_mismatch",
+    "customer_message": "Customer's 15 GB interactive export keeps timing out under low concurrency in sync mode.",
+    "context": {
+      "export_size_gb": 15.0,
+      "concurrency": "low",
+      "workload": "interactive",
+      "execution_mode": "sync",
+      "problem_type": "large_export_timeout"
+    },
+    "naive_baseline_action": "reduce_concurrency",
+    "expected_memory_action": "reduce_concurrency",
+    "expected_applicability": "BOUNDARY",
+    "description": "15 GB interactive workload. Memory contains large-batch experiences but detects contextual boundary and does NOT blindly transfer async chunking."
+  },
+  {
+    "case_id": "BM-07",
+    "name": "Interactive Low-Volume Boundary",
+    "category": "context_mismatch",
+    "customer_message": "Customer's 20 GB interactive export keeps timing out under low concurrency in sync mode.",
+    "context": {
+      "export_size_gb": 20.0,
+      "concurrency": "low",
+      "workload": "interactive",
+      "execution_mode": "sync",
+      "problem_type": "large_export_timeout"
+    },
+    "naive_baseline_action": "reduce_concurrency",
+    "expected_memory_action": "reduce_concurrency",
+    "expected_applicability": "BOUNDARY",
+    "description": "20 GB sync interactive export. Confirms system protects against naive memory hallucinations on small non-batch jobs."
+  },
+  {
+    "case_id": "BM-08",
+    "name": "Borderline Batch Ambiguity",
+    "category": "ambiguous",
+    "customer_message": "Customer's 310 GB daily batch export keeps timing out under medium concurrency in sync mode.",
+    "context": {
+      "export_size_gb": 310.0,
+      "concurrency": "medium",
+      "workload": "daily_batch",
+      "execution_mode": "sync",
+      "problem_type": "large_export_timeout"
+    },
+    "naive_baseline_action": "increase_timeout",
+    "expected_memory_action": "schedule_off_peak",
+    "expected_applicability": "PARTIAL_MATCH",
+    "description": "310 GB daily batch export on the border of multiple experiences. Tests cautious resolution without ungrounded assumptions."
+  }
+]
