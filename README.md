@@ -1,6 +1,8 @@
 # Echo — Organizational Customer Experience Memory
 
 > **Echo doesn't remember what customers said. It remembers what the company learned.**
+> 
+> 📋 **Team & Deployment Notice:** For full details on all changes, module updates, real-time WebSocket streaming, benchmarks, and step-by-step deployment instructions, see **[CHANGES.md](CHANGES.md)**.
 
 Echo is an organizational customer-experience memory system designed for technical support and customer-success engineers at B2B SaaS companies. Instead of blindly repeating past advice because a new ticket superficially resembles an old one, Echo recalls the consequence of prior remediation attempts, checks contextual applicability boundaries, and avoids repeating company mistakes.
 
