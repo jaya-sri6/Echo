@@ -1,0 +1,333 @@
+[
+  {
+    "experience_id": "EXP-001",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "SUCCESS",
+    "context": {
+      "export_size_gb": 180,
+      "concurrency": 12,
+      "workload": "nightly_batch",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "The export pipeline was saturating the database connection pool during a large nightly batch, and the long-running query eventually exceeded the default request window.",
+    "action": "reduce_concurrency",
+    "outcome": "The export completed successfully after lowering parallelism, and the customer avoided the timeout without needing to reschedule the job.",
+    "lesson": "Large batch exports benefit from deliberate concurrency throttling when the source database has fixed connection limits.",
+    "applicability": {
+      "workload": ["nightly_batch"],
+      "execution_mode": ["sync"],
+      "export_size_gb_max": 250,
+      "notes": "Effective for bounded batch jobs that are still within the source system's latency tolerance."
+    }
+  },
+  {
+    "experience_id": "EXP-002",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "SUCCESS",
+    "context": {
+      "export_size_gb": 600,
+      "concurrency": 28,
+      "workload": "nightly_batch",
+      "execution_mode": "async"
+    },
+    "diagnosis": "A single monolithic export consumed all available worker slots, causing long transaction durations that exceeded the allowable wait window in the sync path.",
+    "action": "async_chunked_export",
+    "outcome": "Breaking the export into async chunks allowed the workflow to finish without stale session locks or per-request timeouts.",
+    "lesson": "For very large nightly batch exports, chunking the workload into asynchronous segments is more stable than a single synchronous export.",
+    "applicability": {
+      "workload": ["nightly_batch"],
+      "execution_mode": ["async"],
+      "export_size_gb_min": 500,
+      "notes": "This approach is most useful for large, non-interactive workloads where completion time can be traded for higher stability."
+    }
+  },
+  {
+    "experience_id": "EXP-003",
+    "source": "SEEDED",
+    "problem_type": "export_performance",
+    "status": "SUCCESS",
+    "context": {
+      "export_size_gb": 95,
+      "concurrency": 8,
+      "workload": "ad_hoc_report",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "Retry churn compounded a transient source-side lag, and the export began to time out after the initial backoff threshold was reached.",
+    "action": "retry_with_backoff",
+    "outcome": "Three bounded retries with a staggered backoff window stabilized the connection and completed the export without user-visible disruption.",
+    "lesson": "Short-lived transient network or queue jitter can be more effectively resolved with controlled retry policy than with aggressive concurrency changes.",
+    "applicability": {
+      "workload": ["ad_hoc_report", "scheduled_export"],
+      "execution_mode": ["sync"],
+      "export_size_gb_max": 150,
+      "notes": "Works best when export size is moderate and the workload is not highly parallelized."
+    }
+  },
+  {
+    "experience_id": "EXP-004",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "SUCCESS",
+    "context": {
+      "export_size_gb": 320,
+      "concurrency": 18,
+      "workload": "daily_reporting",
+      "execution_mode": "async"
+    },
+    "diagnosis": "Peak-hour processing created queue contention and a long-tail export duration, which was amplified by the high concurrency level on a shared storage tier.",
+    "action": "schedule_off_peak",
+    "outcome": "Running the export during a lower-traffic maintenance window reduced contention and completed the job within SLA.",
+    "lesson": "Customer-facing export windows often fail because they overlap peak system activity; shifting to off-peak periods restores predictability.",
+    "applicability": {
+      "workload": ["daily_reporting", "monthly_snapshot"],
+      "execution_mode": ["async"],
+      "export_size_gb_min": 200,
+      "notes": "Useful when the data load is large enough that system contention, not raw data volume alone, is the limiting factor."
+    }
+  },
+  {
+    "experience_id": "EXP-005",
+    "source": "SEEDED",
+    "problem_type": "export_performance",
+    "status": "SUCCESS",
+    "context": {
+      "export_size_gb": 240,
+      "concurrency": 24,
+      "workload": "data_migration",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "The exporter kept reading and writing to the same hot partition, creating serialized I/O bottlenecks around the export boundary.",
+    "action": "reduce_concurrency",
+    "outcome": "Lowering concurrency restored steady throughput and prevented the next export from hitting the timeout threshold.",
+    "lesson": "When the storage layer is the bottleneck, reducing concurrency is more effective than creating more parallel workers.",
+    "applicability": {
+      "workload": ["data_migration", "full_export"],
+      "execution_mode": ["sync"],
+      "export_size_gb_min": 150,
+      "export_size_gb_max": 400,
+      "notes": "Best when I/O contention is the driver rather than network latency or queue backlog."
+    }
+  },
+  {
+    "experience_id": "EXP-006",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "SUCCESS",
+    "context": {
+      "export_size_gb": 88,
+      "concurrency": 6,
+      "workload": "compliance_export",
+      "execution_mode": "async"
+    },
+    "diagnosis": "The batch was small enough to succeed, but the system's sync request window was too short for downstream queue latency during peak processing.",
+    "action": "async_chunked_export",
+    "outcome": "The job finished successfully with a stable completion profile and no repeated timeout spikes over the next several runs.",
+    "lesson": "Even moderate exports can benefit from async processing when queue latency is variable and user expectations allow deferred completion.",
+    "applicability": {
+      "workload": ["compliance_export", "scheduled_export"],
+      "execution_mode": ["async"],
+      "export_size_gb_max": 150,
+      "notes": "Useful when the workload can tolerate a delayed completion without impacting a live customer workflow."
+    }
+  },
+  {
+    "experience_id": "EXP-007",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "FAILURE",
+    "context": {
+      "export_size_gb": 600,
+      "concurrency": 36,
+      "workload": "nightly_batch",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "The customer increased the request timeout to match a larger export window, but the export remained blocked by lock contention and source-side read starvation.",
+    "action": "increase_timeout",
+    "outcome": "The job eventually failed after multiple prolonged waits; default timeout tuning alone was insufficient for the workload profile.",
+    "lesson": "Increasing the timeout does not help when the export is fundamentally overloading the source system with competing readers and locks.",
+    "applicability": {
+      "workload": ["nightly_batch"],
+      "execution_mode": ["sync"],
+      "export_size_gb_min": 500,
+      "notes": "It may delay failure but is not a fix for constrained source systems under high parallel load."
+    }
+  },
+  {
+    "experience_id": "EXP-008",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "FAILURE",
+    "context": {
+      "export_size_gb": 450,
+      "concurrency": 28,
+      "workload": "daily_batch",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "Retries were spaced too tightly and continued to hit the same overloaded job queue, producing repeated failed attempts instead of recovery.",
+    "action": "retry_with_backoff",
+    "outcome": "The export never reached stable completion because queue backpressure remained high and the job continued to fail under sustained concurrent reads.",
+    "lesson": "Retry policies are only effective when the root cause is transient; they cannot rescue a workload that is structurally overloaded.",
+    "applicability": {
+      "workload": ["daily_batch"],
+      "execution_mode": ["sync"],
+      "export_size_gb_min": 300,
+      "notes": "This approach is not suitable when the bottleneck is structural throughput exhaustion rather than brief instability."
+    }
+  },
+  {
+    "experience_id": "EXP-009",
+    "source": "SEEDED",
+    "problem_type": "export_performance",
+    "status": "FAILURE",
+    "context": {
+      "export_size_gb": 150,
+      "concurrency": 20,
+      "workload": "low_priority_export",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "Reducing concurrency changed the queue schedule but did not address the underlying storage contention from a congested shared tier.",
+    "action": "reduce_concurrency",
+    "outcome": "The export still failed under sustained latency, and the customer experienced a degraded run rather than a clean completion.",
+    "lesson": "Concurrency reduction helps only when the bottleneck is parallel overload; it is not a universal remedy for all export timeouts.",
+    "applicability": {
+      "workload": ["low_priority_export"],
+      "execution_mode": ["sync"],
+      "export_size_gb_max": 200,
+      "notes": "Different storage tiers may still fail even with reduced concurrency if the underlying I/O path is exhausted."
+    }
+  },
+  {
+    "experience_id": "EXP-010",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "FAILURE",
+    "context": {
+      "export_size_gb": 90,
+      "concurrency": 12,
+      "workload": "sap_report",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "The export was scheduled during a peak reporting period when the warehouse was already saturated by downstream consumers; off-peak scheduling was not attempted.",
+    "action": "schedule_off_peak",
+    "outcome": "The job failed on the same day because the customer lacked a maintenance window and the source system remained busy throughout the export.",
+    "lesson": "For shared infrastructure, simply choosing a different job action is not enough if the job still overlaps with peak contention windows.",
+    "applicability": {
+      "workload": ["sap_report", "daily_reporting"],
+      "execution_mode": ["sync"],
+      "export_size_gb_max": 120,
+      "notes": "The action only helps if the scheduling change is actually possible in the environment."
+    }
+  },
+  {
+    "experience_id": "EXP-011",
+    "source": "SEEDED",
+    "problem_type": "export_performance",
+    "status": "PARTIAL",
+    "context": {
+      "export_size_gb": 75,
+      "concurrency": 10,
+      "workload": "interactive_download",
+      "execution_mode": "async"
+    },
+    "diagnosis": "The request was moved to an async queue but the export still took significantly longer than the expected interactive SLA because the artifact generation step had a long tail.",
+    "action": "async_chunked_export",
+    "outcome": "The export eventually completed, but it missed the user-facing response target and required a manual status check before the file was ready.",
+    "lesson": "Async chunking can prevent hard failure, but it may still undershoot the expectations of interactive workloads if the export is not optimized for completion time.",
+    "applicability": {
+      "workload": ["interactive_download", "ad_hoc_report"],
+      "execution_mode": ["async"],
+      "export_size_gb_max": 100,
+      "notes": "Helpful for avoiding crashes, but not a guarantee of a fast end-user experience."
+    }
+  },
+  {
+    "experience_id": "EXP-012",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "PARTIAL",
+    "context": {
+      "export_size_gb": 40,
+      "concurrency": 16,
+      "workload": "scheduled_report",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "The export recovered from the initial timeout after concurrency was reduced, but completion times remained unstable across repeated runs due to varying warehouse load.",
+    "action": "reduce_concurrency",
+    "outcome": "The job completed most of the time, yet still showed intermittent latency spikes during heavy system load, which meant no fully reliable SLA was reached.",
+    "lesson": "Concurrency reduction can improve stability, but it is not sufficient when multiple workloads compete for the same shared warehouse capacity.",
+    "applicability": {
+      "workload": ["scheduled_report", "compliance_export"],
+      "execution_mode": ["sync"],
+      "export_size_gb_max": 80,
+      "notes": "Best for moderate exports where stability is valued over peak throughput."
+    }
+  },
+  {
+    "experience_id": "EXP-013",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "BOUNDARY",
+    "context": {
+      "export_size_gb": 4,
+      "concurrency": 4,
+      "workload": "interactive_dashboard",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "The customer attempted to use the same large-batch pattern on a tiny interactive export, but the data set was too small to justify the added async or chunking complexity.",
+    "action": "async_chunked_export",
+    "outcome": "The file still exported successfully, but the added orchestration cost was unnecessary and degraded the user experience for a trivial payload.",
+    "lesson": "Large-batch tactics should not be applied automatically to small interactive exports; the operational cost may outweigh the benefit.",
+    "applicability": {
+      "workload": ["interactive_dashboard"],
+      "execution_mode": ["sync"],
+      "export_size_gb_max": 10,
+      "notes": "This pattern is a boundary case: useful for large data sets, but not a default for small interactive exports."
+    }
+  },
+  {
+    "experience_id": "EXP-014",
+    "source": "SEEDED",
+    "problem_type": "export_performance",
+    "status": "BOUNDARY",
+    "context": {
+      "export_size_gb": 12,
+      "concurrency": 2,
+      "workload": "table_snapshot",
+      "execution_mode": "async"
+    },
+    "diagnosis": "An off-peak scheduling change was attempted because the large-batch heuristic suggested broader timing changes, but the data set was far too small for the scheduling policy to matter.",
+    "action": "schedule_off_peak",
+    "outcome": "The export succeeded, but the customer did not see a meaningful gain because the job finished easily without a peak-hour conflict.",
+    "lesson": "A pattern that helps large batch exports is not automatically meaningful for tiny repeatable table snapshots; applicability must be scoped to workload size.",
+    "applicability": {
+      "workload": ["table_snapshot"],
+      "execution_mode": ["async"],
+      "export_size_gb_max": 20,
+      "notes": "Boundary example showing that a useful large-batch strategy can be irrelevant for small workloads."
+    }
+  },
+  {
+    "experience_id": "EXP-015",
+    "source": "SEEDED",
+    "problem_type": "export_timeout",
+    "status": "NON-TRANSFERABLE",
+    "context": {
+      "export_size_gb": 800,
+      "concurrency": 40,
+      "workload": "warehouse_migration",
+      "execution_mode": "sync"
+    },
+    "diagnosis": "The customer was running across a third-party storage tier with severe vendor throttle limits; retry pacing and timeout increases could not mask a platform-level bottleneck outside the export logic.",
+    "action": "retry_with_backoff",
+    "outcome": "The job still failed despite multiple retries because the system under test was constrained by upstream throttling, not by the export implementation itself.",
+    "lesson": "This experience is not transferable to all large exports because the failure is tied to a specific external infrastructure limit and not to a generic timeout pattern.",
+    "applicability": {
+      "workload": ["warehouse_migration"],
+      "execution_mode": ["sync"],
+      "export_size_gb_min": 700,
+      "notes": "Not transferable to other environments unless the same upstream platform constraints are confirmed."
+    }
+  }
+]

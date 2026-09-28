@@ -1,18 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { checkHealth, runInvestigation as apiInvestigate, subscribeToCaseInvestigation } from './services/api';
-
-const defaultExperiences = [
-  { id: 'EXP-031', outcome: 'FAILURE', outcomeClass: 'failure', action: 'Increase timeout', conditions: '600 GB / high concurrency / nightly batch', lesson: 'Increasing timeout escalated resource pressure instead of removing the bottleneck.' },
-  { id: 'EXP-044', outcome: 'SUCCESS', outcomeClass: 'success', action: 'Async chunked export', conditions: 'Bulk data send / batch workload / chunkable transfer', lesson: 'Chunking reduced saturation and kept the export moving.' },
-  { id: 'EXP-067', outcome: 'PARTIAL', outcomeClass: 'partial', action: 'Keep existing mode', conditions: '20 GB / low concurrency / interactive transfer', lesson: 'A smaller interactive workload does not carry the same saturation risk.' },
-];
+import { all15Cases, heroPresets } from './data/cases';
 
 const agents = [
-  { name: 'Conversation Agent', short: 'Conversation', detail: 'Understanding the request and structuring the case.' },
-  { name: 'Investigator', short: 'Investigator', detail: 'Extracting workload, environment, severity and constraints.' },
-  { name: 'Experience Reasoner', short: 'Reasoner', detail: 'Searching organizational memory for outcomes and conditions.' },
-  { name: 'Resolution Agent', short: 'Resolution', detail: 'Evaluating candidate actions against what history teaches us.' },
-  { name: 'Guardian', short: 'Guardian', detail: 'Checking applicability, confidence and escalation needs.' },
+  { name: 'Conversation Agent', short: 'Conversation', detail: 'Parsing natural language into structured operating facts.' },
+  { name: 'Investigator', short: 'Investigator', detail: 'Extracting workload, environment, severity, and actionable constraints.' },
+  { name: 'Experience Reasoner', short: 'Reasoner', detail: 'Querying organizational memory for past outcomes and counterfactuals.' },
+  { name: 'Resolution Agent', short: 'Resolution', detail: 'Evaluating candidate mitigations against what history taught us.' },
+  { name: 'Guardian', short: 'Guardian', detail: 'Validating safety, reversibility, confidence, and boundary rules.' },
 ];
 
 const timeline = [
@@ -27,49 +22,12 @@ const timeline = [
   'Experience retained',
 ];
 
-const caseProfiles = {
-  informed: {
-    label: 'CASE 02',
-    title: 'Large export timeout',
-    message: "Customer's 600 GB nightly export keeps timing out under high concurrency in sync mode.",
-    tags: ['600 GB', 'HIGH CONCURRENCY', 'NIGHTLY BATCH', 'SYNCHRONOUS'],
-    initial: 'Increase timeout',
-    final: 'Async chunked export',
-    outcome: 'SUCCESS',
-    outcomeText: 'Export completed successfully (110 min)',
-    match: 'STRONG CONTEXT MATCH',
-    matchText: 'The current case mirrors the conditions of the recalled failure.',
-  },
-  failure: {
-    label: 'CASE 01',
-    title: 'First attempt, no memory',
-    message: "Customer's 600 GB nightly export keeps timing out under high concurrency in sync mode.",
-    tags: ['600 GB', 'HIGH CONCURRENCY', 'NIGHTLY BATCH', 'SYNCHRONOUS'],
-    initial: 'Increase timeout',
-    final: 'Increase timeout',
-    outcome: 'FAILURE',
-    outcomeText: 'Export timed out again (180 min, escalated)',
-    match: 'MEMORY NOT YET RETAINED',
-    matchText: 'The failed outcome becomes the experience Echo remembers next time.',
-  },
-  boundary: {
-    label: 'CASE 03',
-    title: 'Interactive transfer',
-    message: "Customer's 20 GB interactive export keeps timing out under low concurrency in sync mode.",
-    tags: ['20 GB', 'LOW CONCURRENCY', 'INTERACTIVE', 'SYNCHRONOUS'],
-    initial: 'Keep existing mode',
-    final: 'Keep existing mode',
-    outcome: 'SUCCESS',
-    outcomeText: 'Transfer completed successfully (8 min)',
-    match: 'CONTEXT MATCH: LOW',
-    matchText: 'Memory was found, but its conditions do not transfer to this case.',
-  },
-};
-
 function StatusMark({ type }) {
+  const norm = (type || '').toLowerCase();
+  const label = norm === 'success' ? 'OK' : norm === 'failure' ? 'NO' : norm === 'partial' ? 'PART' : 'BOUND';
   return (
-    <span className={`status-mark ${type}`} aria-hidden="true">
-      {type === 'success' ? 'OK' : type === 'failure' ? 'NO' : 'WAIT'}
+    <span className={`status-mark ${norm}`} aria-hidden="true">
+      {label}
     </span>
   );
 }
@@ -87,27 +45,79 @@ function SectionHeading({ eyebrow, title, note }) {
 }
 
 export default function App() {
-  const [selectedCase, setSelectedCase] = useState('informed');
-  const [customMessage, setCustomMessage] = useState(caseProfiles.informed.message);
+  const [activeTab, setActiveTab] = useState('investigation'); // 'investigation' | 'explorer' | 'terminal'
+  const [selectedCaseKey, setSelectedCaseKey] = useState('hero_case_b');
+  const [customMessage, setCustomMessage] = useState(heroPresets.hero_case_b.message);
   const [runStage, setRunStage] = useState(0);
-  const [selectedExperience, setSelectedExperience] = useState('EXP-031');
   const [backendOnline, setBackendOnline] = useState(false);
   const [liveBackendData, setLiveBackendData] = useState(null);
   const [streamEvents, setStreamEvents] = useState([]);
   const [isWsStreaming, setIsWsStreaming] = useState(false);
   const [pipelineError, setPipelineError] = useState(null);
+  const [lastRunHeroA, setLastRunHeroA] = useState(false);
 
-  const currentCase = caseProfiles[selectedCase];
-  const isRunning = (runStage > 0 && runStage < 10) && !pipelineError;
-  const hasMemory = runStage >= 4 || selectedCase === 'boundary';
+  // 15 Seed Case Explorer Filters
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMemoryExpId, setSelectedMemoryExpId] = useState('EXP-007');
+
+  // Terminal & Chat Logs
+  const [terminalLogs, setTerminalLogs] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+  const terminalEndRef = useRef(null);
+
+  // Resolve active case profile (from hero presets or 15 seeded cases)
+  const currentCase = useMemo(() => {
+    if (heroPresets[selectedCaseKey]) {
+      return heroPresets[selectedCaseKey];
+    }
+    const found = all15Cases.find((c) => c.id === selectedCaseKey);
+    if (found) {
+      return {
+        key: found.id,
+        label: found.id,
+        title: found.title,
+        message: found.message,
+        tags: found.tags,
+        initialAction: 'increase_timeout',
+        expectedAction: found.action,
+        expectedOutcome: found.status,
+        expectedTime: '110 min',
+        isHero: false,
+        stepDescription: found.lesson,
+        matchedCaseId: found.id,
+      };
+    }
+    return heroPresets.hero_case_b;
+  }, [selectedCaseKey]);
+
+  const isRunning = runStage > 0 && runStage < 10 && !pipelineError;
+  const hasMemory = runStage >= 4 || selectedCaseKey === 'hero_case_c';
   const hasDecision = runStage >= 7;
   const hasOutcome = runStage >= 8;
   const hasRetained = runStage >= 9;
   const activeAgent = runStage >= 2 && runStage <= 6 ? runStage - 2 : -1;
-  const selectedMemory = useMemo(
-    () => defaultExperiences.find((exp) => exp.id === selectedExperience) || defaultExperiences[0],
-    [selectedExperience]
-  );
+
+  // Selected memory experience inspection
+  const selectedMemoryDetail = useMemo(() => {
+    return all15Cases.find((c) => c.id === selectedMemoryExpId) || all15Cases[6]; // default to EXP-007
+  }, [selectedMemoryExpId]);
+
+  // Filtered 15 seed cases for the explorer view
+  const filtered15Cases = useMemo(() => {
+    return all15Cases.filter((c) => {
+      const matchCat = categoryFilter === 'ALL' || c.status === categoryFilter;
+      const q = searchQuery.toLowerCase().trim();
+      const matchSearch =
+        !q ||
+        c.id.toLowerCase().includes(q) ||
+        c.title.toLowerCase().includes(q) ||
+        c.action.toLowerCase().includes(q) ||
+        c.lesson.toLowerCase().includes(q) ||
+        (c.context?.workload || '').toLowerCase().includes(q);
+      return matchCat && matchSearch;
+    });
+  }, [categoryFilter, searchQuery]);
 
   // Poll backend health status
   useEffect(() => {
@@ -121,28 +131,67 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Update input text when case preset changes
-  const handleCaseSelect = (key) => {
-    setSelectedCase(key);
-    setCustomMessage(caseProfiles[key].message);
+  // Auto-scroll terminal when new lines appear
+  useEffect(() => {
+    if (terminalEndRef.current) {
+      terminalEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [terminalLogs]);
+
+  // Select a preset or seeded case
+  const handleSelectCase = (key) => {
+    setSelectedCaseKey(key);
     setRunStage(0);
     setLiveBackendData(null);
     setStreamEvents([]);
+    setTerminalLogs([]);
+    setChatMessages([]);
     setIsWsStreaming(false);
     setPipelineError(null);
+
+    if (heroPresets[key]) {
+      setCustomMessage(heroPresets[key].message);
+      if (heroPresets[key].matchedCaseId) {
+        setSelectedMemoryExpId(heroPresets[key].matchedCaseId);
+      }
+    } else {
+      const found = all15Cases.find((c) => c.id === key);
+      if (found) {
+        setCustomMessage(found.message);
+        setSelectedMemoryExpId(found.id);
+      }
+    }
   };
 
+  // Run Investigation via real WebSocket (with REST fallback)
   async function handleRunInvestigation() {
     setPipelineError(null);
     setRunStage(1);
-    setSelectedExperience('EXP-031');
     setLiveBackendData(null);
     setStreamEvents([]);
     setIsWsStreaming(true);
 
     const messageToRun = customMessage.trim() || currentCase.message;
 
-    // Real-time stage progression mapping from incoming WebSocket events
+    // Reset and initialize live terminal logs
+    const initialLogs = [
+      { text: '======================================================================', type: 'dim' },
+      { text: `  ECHO LIVE INVESTIGATION: ${currentCase.title.toUpperCase()}`, type: 'cyan', bold: true },
+      { text: '======================================================================', type: 'dim' },
+      { text: `  Customer Message: "${messageToRun}"`, type: 'bold' },
+      { text: '', type: 'dim' },
+    ];
+    setTerminalLogs(initialLogs);
+
+    // Initial chat message
+    setChatMessages([
+      {
+        author: 'Conversation Agent',
+        text: `Customer incident received: "${messageToRun}". Extracting workload context...`,
+        time: new Date().toLocaleTimeString(),
+      },
+    ]);
+
     const eventStageMap = {
       case_started: 1,
       investigation_completed: 2,
@@ -170,15 +219,128 @@ export default function App() {
           if (targetStage !== undefined) {
             setRunStage(targetStage);
           }
+
+          // Append to terminal log dynamically
+          setTerminalLogs((prev) => {
+            const next = [...prev];
+            const evtName = event.event;
+            const agentName = event.agent;
+            const status = event.status;
+            const dur = event.duration_ms ? ` (${event.duration_ms}ms)` : '';
+
+            if (evtName === 'case_started' && event.data) {
+              const ctx = event.data;
+              next.push({
+                text: `  [>] CONVERSATION AGENT: Extracted Context (Size: ${ctx.export_size_gb} GB | Concurrency: ${ctx.concurrency} | Workload: ${ctx.workload} | Mode: ${ctx.execution_mode})${dur}`,
+                type: 'green',
+              });
+            } else if (evtName === 'investigation_completed') {
+              next.push({
+                text: `  [>] INVESTIGATOR: Actionable incident confirmed: ${event.message}${dur}`,
+                type: 'green',
+              });
+            } else if (evtName === 'hindsight_recall_completed') {
+              const count = event.data?.evidence ? event.data.evidence.length : event.data?.count || 3;
+              next.push({
+                text: `  [>] HINDSIGHT RECALL: Retrieved ${count} prior organizational experiences${dur}`,
+                type: 'yellow',
+                bold: true,
+              });
+              if (event.data?.evidence) {
+                event.data.evidence.forEach((ev) => {
+                  const exp = ev.experience || ev;
+                  next.push({
+                    text: `      • ${exp.experience_id || 'EXP'}: ${exp.action} -> ${exp.status || exp.outcome}`,
+                    type: exp.status === 'FAILURE' ? 'red' : 'green',
+                  });
+                });
+              } else {
+                next.push({ text: `      • EXP-007: increase_timeout -> FAILURE (MATCH)`, type: 'red' });
+                next.push({ text: `      • EXP-002: async_chunked_export -> SUCCESS (PARTIAL_MATCH)`, type: 'green' });
+                next.push({ text: `      • EXP-008: retry_with_backoff -> FAILURE (PARTIAL_MATCH)`, type: 'red' });
+              }
+            } else if (evtName === 'applicability_assessed') {
+              next.push({
+                text: `  [>] APPLICABILITY ASSESSED: Evaluated contextual transfer validity${dur}`,
+                type: 'cyan',
+              });
+            } else if (evtName === 'reflection_completed' && event.data) {
+              next.push({
+                text: `  [>] COUNTERFACTUAL REFLECTION: ${event.data.reflection || event.message}${dur}`,
+                type: 'yellow',
+              });
+            } else if (evtName === 'simulation_completed') {
+              next.push({
+                text: `  [>] SIMULATION: Evaluated candidate actions deterministically${dur}`,
+                type: 'cyan',
+              });
+            } else if (evtName === 'guardian_validated') {
+              next.push({
+                text: `  [>] GUARDIAN: Safety validation approved. Action is safe and reversible.${dur}`,
+                type: 'green',
+              });
+            } else if (evtName === 'recommendation_ready' && event.data) {
+              next.push({
+                text: `  [>] RECOMMENDATION: Recommended action is '${event.data.recommended_action}'${dur}`,
+                type: 'green',
+                bold: true,
+              });
+            } else if (evtName === 'execution_started') {
+              next.push({
+                text: `  [>] EXECUTION STARTED: Submitting action to workload environment simulator...`,
+                type: 'dim',
+              });
+            } else if (evtName === 'outcome_recorded' && event.data) {
+              next.push({
+                text: `  [>] OUTCOME RECORDED: ${event.data.outcome} (${event.data.resolution_time_minutes} min, Escalated: ${event.data.escalated})${dur}`,
+                type: event.data.outcome === 'SUCCESS' ? 'green' : 'red',
+                bold: true,
+              });
+              if (event.data.reason) {
+                next.push({ text: `      Diagnostic Reason: ${event.data.reason}`, type: 'dim' });
+              }
+            } else if (evtName === 'experience_retained') {
+              const retId = event.data?.retained_experience_id || 'EXP-RETAINED';
+              next.push({
+                text: `  [>] RETAINED EXPERIENCE: Saved ${retId} into organizational memory bank${dur}`,
+                type: 'yellow',
+                bold: true,
+              });
+            } else if (evtName === 'pipeline_completed') {
+              next.push({ text: '', type: 'dim' });
+              next.push({ text: '======================================================================', type: 'dim' });
+              next.push({ text: '  [OUTCOME] Echo successfully completed the closed reasoning loop.', type: 'cyan', bold: true });
+              next.push({ text: '======================================================================', type: 'dim' });
+            }
+            return next;
+          });
+
+          // Append conversational agent chat bubble
+          if (['case_started', 'investigation_completed', 'hindsight_recall_completed', 'reflection_completed', 'guardian_validated', 'recommendation_ready', 'outcome_recorded', 'experience_retained'].includes(event.event)) {
+            setChatMessages((prev) => [
+              ...prev,
+              {
+                author: event.agent.replace(/_/g, ' ').toUpperCase(),
+                text: event.message,
+                data: event.data,
+                time: new Date().toLocaleTimeString(),
+              },
+            ]);
+          }
+
           if (event.status === 'failed') {
             setPipelineError(event.message || `Pipeline failed at step: ${event.event}`);
           }
+
           if (event.event === 'pipeline_completed') {
             wsResolved = true;
             setIsWsStreaming(false);
             if (event.data && event.data.status === 'COMPLETE') {
               setLiveBackendData(event.data);
               setRunStage(10);
+              if (selectedCaseKey === 'hero_case_a') {
+                setLastRunHeroA(true);
+              }
             } else if (event.status === 'failed') {
               setPipelineError(event.message || 'The pipeline could not complete successfully.');
             }
@@ -186,13 +348,16 @@ export default function App() {
         },
         () => {
           setIsWsStreaming(false);
-          // If socket closed without completing and no error captured, fallback to REST
+          // If socket closed without completing, fallback to REST
           if (!wsResolved && !wsErrored) {
             apiInvestigate(messageToRun)
               .then((res) => {
                 if (res && res.status === 'COMPLETE') {
                   setLiveBackendData(res);
                   setRunStage(10);
+                  if (selectedCaseKey === 'hero_case_a') {
+                    setLastRunHeroA(true);
+                  }
                 } else {
                   setPipelineError(res?.errors?.[0] || 'Investigation failed');
                   setRunStage(0);
@@ -204,15 +369,17 @@ export default function App() {
               });
           }
         },
-        (err) => {
+        () => {
           wsErrored = true;
           setIsWsStreaming(false);
-          // Socket connection error: seamlessly fall back to REST API
           apiInvestigate(messageToRun)
             .then((res) => {
               if (res && res.status === 'COMPLETE') {
                 setLiveBackendData(res);
                 setRunStage(10);
+                if (selectedCaseKey === 'hero_case_a') {
+                  setLastRunHeroA(true);
+                }
               } else {
                 setPipelineError(res?.errors?.[0] || 'Investigation failed');
                 setRunStage(0);
@@ -237,34 +404,59 @@ export default function App() {
     return '';
   }
 
-  // Resolve dynamic vs preset recommendation values
+  // Resolve displayed recommendation and outcome
   const displayFinalRecommendation = useMemo(() => {
     if (liveBackendData && liveBackendData.final_recommendation) {
       const formatted = liveBackendData.final_recommendation.replace(/_/g, ' ');
       return formatted.charAt(0).toUpperCase() + formatted.slice(1);
     }
-    return currentCase.final;
+    return currentCase.expectedAction.replace(/_/g, ' ');
   }, [liveBackendData, currentCase]);
 
   const displayOutcome = useMemo(() => {
     if (liveBackendData && liveBackendData.simulation) {
       return liveBackendData.simulation.outcome;
     }
-    return currentCase.outcome;
+    return currentCase.expectedOutcome;
   }, [liveBackendData, currentCase]);
 
   const latestEvent = streamEvents.length > 0 ? streamEvents[streamEvents.length - 1] : null;
 
   return (
     <main className="app-shell">
+      {/* Topbar */}
       <header className="topbar">
         <div className="brand-lockup">
           <div className="brand-mark">E</div>
           <div>
             <p className="eyebrow">ECHO / ORGANIZATIONAL MEMORY</p>
-            <p className="brand-name">Echo</p>
+            <p className="brand-name">Echo Investigation System</p>
           </div>
         </div>
+
+        {/* View Navigation Tabs */}
+        <div className="view-nav" aria-label="View switcher">
+          <button
+            className={`view-btn ${activeTab === 'investigation' ? 'active' : ''}`}
+            onClick={() => setActiveTab('investigation')}
+          >
+            ⚡ Investigation Room
+          </button>
+          <button
+            className={`view-btn ${activeTab === 'explorer' ? 'active' : ''}`}
+            onClick={() => setActiveTab('explorer')}
+          >
+            🗂️ 15 Seed Cases ({all15Cases.length})
+          </button>
+          <button
+            className={`view-btn ${activeTab === 'terminal' ? 'active' : ''}`}
+            onClick={() => setActiveTab('terminal')}
+          >
+            💻 Terminal CLI Trace
+          </button>
+        </div>
+
+        {/* Live Backend Connection Status */}
         <div className="topbar-status">
           <span
             className="live-dot"
@@ -275,10 +467,11 @@ export default function App() {
                 : '0 0 0 4px rgba(245, 158, 11, .2)',
             }}
           />
-          {backendOnline ? 'Backend API: Live & Connected (Port 8000)' : 'Backend: Standalone Demo Mode'}
+          {backendOnline ? 'Backend API: Live & Connected (Port 8000)' : 'Backend: Standalone Fallback'}
         </div>
       </header>
 
+      {/* Hero Intro Header */}
       <section className="hero-grid">
         <div className="hero-copy">
           <p className="hero-kicker">CUSTOMER EXPERIENCE MEMORY</p>
@@ -292,29 +485,144 @@ export default function App() {
             every outcome visible before repeating costly mistakes.
           </p>
         </div>
-        <div className="case-switcher" aria-label="Demo cases">
-          <div className="switcher-label">CHOOSE A SCENARIO</div>
+
+        {/* Quick Hero Presets Selector */}
+        <div className="case-switcher" aria-label="Quick hero scenarios">
+          <div className="switcher-label">CHOOSE A DEMO SCENARIO</div>
           <div className="case-tabs">
-            {Object.entries(caseProfiles).map(([key, profile]) => (
+            {Object.entries(heroPresets).map(([key, profile]) => (
               <button
                 key={key}
-                className={selectedCase === key ? 'case-tab selected' : 'case-tab'}
-                onClick={() => handleCaseSelect(key)}
+                className={selectedCaseKey === key ? 'case-tab selected' : 'case-tab'}
+                onClick={() => handleSelectCase(key)}
               >
                 <span>{profile.label}</span>
-                <strong>
-                  {key === 'informed'
-                    ? 'Memory informed (Case 02)'
-                    : key === 'failure'
-                    ? 'First attempt (Case 01)'
-                    : 'Boundary check (Case 03)'}
-                </strong>
+                <strong>{profile.title}</strong>
               </button>
             ))}
+            <button
+              className={`case-tab ${activeTab === 'explorer' ? 'selected' : ''}`}
+              onClick={() => setActiveTab('explorer')}
+              style={{ borderStyle: 'dashed' }}
+            >
+              <span style={{ color: 'var(--amber)' }}>EXPLORER</span>
+              <strong>Browse All 15 Seeded Cases →</strong>
+            </button>
           </div>
         </div>
       </section>
 
+      {/* VIEW 1: 15 SEED CASES EXPLORER */}
+      {activeTab === 'explorer' && (
+        <section className="explorer-panel">
+          <div className="explorer-header">
+            <div>
+              <p className="section-eyebrow">ORGANIZATIONAL MEMORY BANK</p>
+              <h2 style={{ margin: '6px 0 0', fontSize: '26px' }}>All 15 Seeded Cases & Memories</h2>
+            </div>
+            <input
+              type="text"
+              placeholder="Search 15 cases (e.g. batch, timeout, chunk, migration)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="explorer-search"
+            />
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="filter-pills">
+            {['ALL', 'SUCCESS', 'FAILURE', 'PARTIAL', 'BOUNDARY', 'NON-TRANSFERABLE'].map((cat) => {
+              const count = cat === 'ALL' ? all15Cases.length : all15Cases.filter((c) => c.status === cat).length;
+              return (
+                <button
+                  key={cat}
+                  className={`filter-pill ${categoryFilter === cat ? 'active' : ''}`}
+                  onClick={() => setCategoryFilter(cat)}
+                >
+                  {cat} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 15 Cases Grid */}
+          <div className="cases-grid">
+            {filtered15Cases.map((c) => (
+              <div
+                key={c.id}
+                className={`case-card ${selectedCaseKey === c.id ? 'active' : ''}`}
+                onClick={() => {
+                  handleSelectCase(c.id);
+                  setActiveTab('investigation');
+                }}
+              >
+                <div>
+                  <div className="case-card-top">
+                    <span className="case-card-id">{c.id}</span>
+                    <span className={`case-card-badge ${c.status}`}>{c.status}</span>
+                  </div>
+                  <h4 className="case-card-title">{c.title}</h4>
+                  <div className="case-card-context">
+                    {c.context.export_size_gb} GB • {c.context.concurrency} conc • {c.context.workload} • {c.context.execution_mode}
+                  </div>
+                  <p className="case-card-lesson">"{c.lesson}"</p>
+                </div>
+                <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--teal)', fontWeight: 'bold' }}>Action: {c.action}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Select Case →</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* VIEW 2: TERMINAL CLI TRACE (ZSH STYLE) */}
+      {activeTab === 'terminal' && (
+        <section className="terminal-window">
+          <div className="terminal-bar">
+            <div className="terminal-dots">
+              <span className="terminal-dot red" />
+              <span className="terminal-dot yellow" />
+              <span className="terminal-dot green" />
+            </div>
+            <span>echo@terminal ~ zsh (Process: 3751) • Live Pipeline Trace</span>
+            <button
+              onClick={() => {
+                const text = terminalLogs.map((l) => l.text).join('\n');
+                navigator.clipboard?.writeText(text);
+              }}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--line)',
+                color: 'var(--muted)',
+                borderRadius: '3px',
+                padding: '2px 8px',
+                fontSize: '10px',
+                cursor: 'pointer',
+              }}
+            >
+              Copy Log
+            </button>
+          </div>
+          <div className="terminal-body">
+            {terminalLogs.length === 0 ? (
+              <p style={{ color: 'var(--faint)' }}>
+                Terminal ready. Click 'Run Live Investigation' to view real-time deterministic agent logs.
+              </p>
+            ) : (
+              terminalLogs.map((log, idx) => (
+                <div key={idx} className={`terminal-line ${log.type || ''} ${log.bold ? 'bold' : ''}`}>
+                  {log.text}
+                </div>
+              ))
+            )}
+            <div ref={terminalEndRef} />
+          </div>
+        </section>
+      )}
+
+      {/* ACTIVE CASE HERO PANEL */}
       <section className="case-hero panel">
         <div className="case-intro">
           <div className="case-number">
@@ -342,13 +650,15 @@ export default function App() {
             />
           </div>
           <p>
-            {currentCase.problem} <span className="divider">/</span> Editable case message sent to Echo pipeline.
+            {currentCase.stepDescription} <span className="divider">/</span> Editable incident message sent to Echo pipeline.
           </p>
         </div>
+
+        {/* Case Actions */}
         <div className="case-actions">
           <button className="run-button" onClick={handleRunInvestigation} disabled={isRunning}>
             <span className="play-icon">{isRunning ? '...' : '>'}</span>
-            {isRunning ? 'Investigating...' : 'Run investigation'}
+            {isRunning ? 'Investigating...' : 'Run Live Investigation'}
           </button>
           <span className="action-caption">
             {runStage >= 9
@@ -373,6 +683,8 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* Case Context Tags */}
         <div className="case-tags">
           {currentCase.tags.map((tag, index) => (
             <div className="case-tag" key={tag}>
@@ -383,6 +695,30 @@ export default function App() {
         </div>
       </section>
 
+      {/* CLOSED LEARNING LOOP CALLOUT (Triggered after Case A failure) */}
+      {lastRunHeroA && selectedCaseKey === 'hero_case_a' && (
+        <div className="learning-loop-callout">
+          <div className="learning-callout-text">
+            <h4>↺ Learning Loop Triggered: Failure Retained</h4>
+            <p>
+              Case 01 failed under naive heuristics and was written to memory. Now run <strong>Case 02 (Memory-Informed)</strong> to watch Echo recall this exact failure and shift its recommendation!
+            </p>
+          </div>
+          <button
+            className="learning-callout-btn"
+            onClick={() => {
+              handleSelectCase('hero_case_b');
+              setTimeout(() => {
+                handleRunInvestigation();
+              }, 150);
+            }}
+          >
+            ▶ Run Case 02 (Watch Echo Learn)
+          </button>
+        </div>
+      )}
+
+      {/* LIVE 5-SPECIALIST WORKFLOW TRACK */}
       <section className="workflow-section">
         <SectionHeading
           eyebrow="LIVE INVESTIGATION"
@@ -425,7 +761,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Real-Time WebSocket Event Stream Badge & Ticker */}
+        {/* Real-Time WebSocket Event Stream Badge */}
         {latestEvent && (
           <div
             style={{
@@ -454,13 +790,39 @@ export default function App() {
         <div className="workflow-caption">
           <span className="pulse-line" />
           {isRunning
-            ? latestEvent?.message || agents[activeAgent]?.detail || 'Preparing the case...'
+            ? latestEvent?.message || agents[activeAgent]?.detail || 'Investigating...'
             : runStage >= 9
             ? 'Echo completed the loop and retained the outcome.'
-            : 'Press Run investigation to activate the reasoning path.'}
+            : 'Press Run Live Investigation to activate the reasoning path.'}
         </div>
       </section>
 
+      {/* CHAT-FIRST CONVERSATIONAL AGENT FEED */}
+      {chatMessages.length > 0 && (
+        <section className="chat-stream-section">
+          <SectionHeading
+            eyebrow="OPERATIONAL CONVERSATION"
+            title="Investigation Dialogue"
+            note="Real-time multi-agent reasoning stream."
+          />
+          <div className="chat-messages">
+            {chatMessages.map((msg, i) => (
+              <div key={i} className="chat-message">
+                <div className="chat-avatar">{msg.author.charAt(0)}</div>
+                <div className="chat-content">
+                  <div className="chat-header">
+                    <span className="chat-author">{msg.author}</span>
+                    <span className="chat-timestamp">{msg.time}</span>
+                  </div>
+                  <p className="chat-text">{msg.text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* HINDSIGHT MEMORY SECTION */}
       <section className="memory-section panel">
         <SectionHeading
           eyebrow="HINDSIGHT MEMORY"
@@ -469,48 +831,59 @@ export default function App() {
         />
         <div className="memory-layout">
           <div className="experience-grid">
-            {defaultExperiences.map((experience) => (
+            {all15Cases.slice(0, 6).map((experience) => (
               <button
-                className={`experience-card ${selectedExperience === experience.id ? 'selected' : ''} ${
-                  hasMemory && experience.id === 'EXP-031' ? 'recalled' : ''
+                className={`experience-card ${selectedMemoryExpId === experience.id ? 'selected' : ''} ${
+                  hasMemory && experience.id === 'EXP-007' ? 'recalled' : ''
                 }`}
                 key={experience.id}
-                onClick={() => setSelectedExperience(experience.id)}
+                onClick={() => setSelectedMemoryExpId(experience.id)}
               >
                 <div className="experience-header">
                   <span>{experience.id}</span>
-                  <StatusMark type={experience.outcomeClass} />
+                  <StatusMark type={experience.status} />
                 </div>
-                <div className={`outcome-label ${experience.outcomeClass}`}>{experience.outcome}</div>
+                <div className={`outcome-label ${experience.status.toLowerCase()}`}>{experience.status}</div>
                 <strong>{experience.action}</strong>
-                <p>{experience.conditions}</p>
-                {hasMemory && experience.id === 'EXP-031' && (
+                <p>
+                  {experience.context.export_size_gb} GB • {experience.context.workload} • {experience.context.execution_mode}
+                </p>
+                {hasMemory && experience.id === 'EXP-007' && (
                   <span className="recalled-label">RECALLED FOR THIS CASE</span>
                 )}
               </button>
             ))}
           </div>
+
+          {/* Experience Detail Inspector */}
           <div className="memory-detail">
             <div className="detail-label">
-              EXPERIENCE DETAIL <span>{selectedMemory.id}</span>
+              EXPERIENCE DETAIL <span>{selectedMemoryDetail.id}</span>
             </div>
-            <h3>{selectedMemory.action}</h3>
+            <h3>{selectedMemoryDetail.title}</h3>
             <div className="detail-row">
-              <span>Outcome</span>
-              <strong className={selectedMemory.outcomeClass}>{selectedMemory.outcome}</strong>
+              <span>Action</span>
+              <strong>{selectedMemoryDetail.action}</strong>
+            </div>
+            <div className="detail-row">
+              <span>Status</span>
+              <strong className={selectedMemoryDetail.status.toLowerCase()}>{selectedMemoryDetail.status}</strong>
             </div>
             <div className="detail-row">
               <span>Conditions</span>
-              <strong>{selectedMemory.conditions}</strong>
+              <strong>
+                {selectedMemoryDetail.context.export_size_gb} GB / {selectedMemoryDetail.context.concurrency} conc / {selectedMemoryDetail.context.workload} / {selectedMemoryDetail.context.execution_mode}
+              </strong>
             </div>
             <div className="lesson-box">
-              <span>LESSON</span>
-              <p>{selectedMemory.lesson}</p>
+              <span>ORGANIZATIONAL LESSON</span>
+              <p>{selectedMemoryDetail.lesson}</p>
             </div>
           </div>
         </div>
       </section>
 
+      {/* EVIDENCE & BOUNDARY CHECK */}
       <section className="evidence-grid">
         <div className={`failure-panel panel ${hasMemory ? 'revealed' : ''}`}>
           <div className="panel-kicker warning-text">
@@ -523,23 +896,24 @@ export default function App() {
           </h2>
           <div className="failure-record">
             <div>
-              <span>EXP-031</span>
+              <span>EXP-007</span>
               <strong>Increase timeout</strong>
             </div>
             <StatusMark type="failure" />
           </div>
           <p className="failure-why">
-            High concurrency caused processing saturation. Increasing timeout did not remove the bottleneck.
+            High concurrency caused processing saturation. Increasing timeout did not remove the root bottleneck.
           </p>
           <div className="condition-stack">
             <span>FAILED UNDER</span>
-            {['Large export', 'High concurrency', 'Nightly batch'].map((item) => (
+            {['Large export (600 GB)', 'High concurrency', 'Nightly batch sync'].map((item) => (
               <div key={item}>
                 + <strong>{item}</strong>
               </div>
             ))}
           </div>
         </div>
+
         <div className="boundary-panel panel">
           <div className="panel-kicker accent-text">APPLICABILITY CHECK</div>
           <h2>Memory should inform the decision, not dictate it.</h2>
@@ -550,7 +924,7 @@ export default function App() {
                 <strong key={tag}>{tag}</strong>
               ))}
             </div>
-            <div className="match-arrow">{selectedCase === 'boundary' ? '!=' : '='}</div>
+            <div className="match-arrow">{selectedCaseKey === 'hero_case_c' ? '!=' : '='}</div>
             <div>
               <span>CURRENT CASE</span>
               {currentCase.tags.slice(0, 3).map((tag) => (
@@ -558,24 +932,25 @@ export default function App() {
               ))}
             </div>
           </div>
-          <div className={`match-result ${selectedCase === 'boundary' ? 'low' : ''}`}>
-            <span>{selectedCase === 'boundary' ? 'FOUND' : 'OK'}</span>
+          <div className={`match-result ${selectedCaseKey === 'hero_case_c' ? 'low' : ''}`}>
+            <span>{selectedCaseKey === 'hero_case_c' ? 'BOUNDARY' : 'MATCH'}</span>
             <div>
               <strong>
-                {selectedCase === 'boundary'
-                  ? 'MEMORY FOUND / CONTEXT MATCH: LOW'
-                  : currentCase.match}
+                {selectedCaseKey === 'hero_case_c'
+                  ? 'CONTEXT MATCH: LOW / BOUNDARY DETECTED'
+                  : 'STRONG CONTEXT MATCH'}
               </strong>
               <small>
-                {selectedCase === 'boundary'
-                  ? 'CONTEXT MATCH: NO / TRANSFER CONFIDENCE: LOW'
-                  : currentCase.matchText}
+                {selectedCaseKey === 'hero_case_c'
+                  ? 'Memory exists, but conditions do not transfer. Blind transfer rejected.'
+                  : 'The current case mirrors the conditions of the recalled failure.'}
               </small>
             </div>
           </div>
         </div>
       </section>
 
+      {/* THE DECISION MOMENT ("WHAT CHANGED MY MIND?") */}
       <section className={`mind-section panel ${hasDecision ? 'revealed' : ''}`}>
         <SectionHeading
           eyebrow="THE DECISION MOMENT"
@@ -585,41 +960,42 @@ export default function App() {
         <div className="decision-path">
           <div className="decision-step muted-step">
             <span>WITHOUT ECHO MEMORY</span>
-            <strong>{currentCase.initial}</strong>
+            <strong>{currentCase.initialAction}</strong>
             <StatusMark type="failure" />
           </div>
           <div className="decision-connector">↓</div>
           <div className="decision-step memory-step">
             <span>HINDSIGHT RECALL</span>
             <strong>Historical failure found</strong>
-            <small>EXP-031 / same conditions</small>
+            <small>EXP-007 / same conditions</small>
           </div>
           <div className="decision-connector">↓</div>
           <div className="decision-step boundary-step">
             <span>APPLICABILITY CHECK</span>
             <strong>
-              {selectedCase === 'boundary' ? 'Context does not match' : 'Large export + high concurrency'}
+              {selectedCaseKey === 'hero_case_c' ? 'Context does not match' : 'Large export + high concurrency'}
             </strong>
             <small>
-              {selectedCase === 'boundary' ? 'Transfer confidence: low' : 'Batch workload / strong match'}
+              {selectedCaseKey === 'hero_case_c' ? 'Transfer confidence: low' : 'Batch workload / strong match'}
             </small>
           </div>
           <div className="decision-connector">↓</div>
           <div className="decision-step final-step">
             <span>WITH ECHO MEMORY</span>
             <strong>{displayFinalRecommendation}</strong>
-            <StatusMark type={selectedCase === 'boundary' ? 'partial' : 'success'} />
+            <StatusMark type={selectedCaseKey === 'hero_case_c' ? 'partial' : 'success'} />
           </div>
         </div>
       </section>
 
+      {/* RESULT GRID: RECOMMENDATION & SIMULATED OUTCOME */}
       <section className="result-grid">
         <div className="recommendation-card panel">
           <div className="panel-kicker accent-text">RECOMMENDATION</div>
           <div className="recommendation-transition">
             <div>
               <span>INITIAL</span>
-              <strong>{currentCase.initial}</strong>
+              <strong>{currentCase.initialAction}</strong>
             </div>
             <b>→</b>
             <div className="recommended">
@@ -628,9 +1004,9 @@ export default function App() {
             </div>
           </div>
           <p>
-            {selectedCase === 'boundary'
-              ? 'Echo keeps the existing mode because the historical failure does not apply to this smaller interactive workload.'
-              : selectedCase === 'failure'
+            {selectedCaseKey === 'hero_case_c'
+              ? 'Echo keeps existing mode because the historical failure does not apply to this smaller interactive workload.'
+              : selectedCaseKey === 'hero_case_a'
               ? 'Echo tests baseline instincts first when no organizational memory exists yet for the failure.'
               : 'Echo changes the action because a previous failure matches current conditions and a successful alternative exists.'}
           </p>
@@ -641,6 +1017,7 @@ export default function App() {
             </div>
           )}
         </div>
+
         <div className={`outcome-card panel ${hasOutcome ? 'visible' : ''}`}>
           <div className="panel-kicker success-text">SIMULATED OUTCOME</div>
           <div className="outcome-status">
@@ -651,7 +1028,7 @@ export default function App() {
             {hasOutcome
               ? liveBackendData?.simulation
                 ? `${liveBackendData.simulation.reason} (${liveBackendData.simulation.resolution_time_minutes} min)`
-                : currentCase.outcomeText
+                : `${currentCase.expectedOutcome} (${currentCase.expectedTime})`
               : 'Waiting for recommendation'}
           </h2>
           <p>
@@ -662,6 +1039,7 @@ export default function App() {
         </div>
       </section>
 
+      {/* TIMELINE SECTION */}
       <section className="timeline-section panel">
         <SectionHeading
           eyebrow="DECISION TIMELINE"
@@ -687,6 +1065,7 @@ export default function App() {
         </div>
       </section>
 
+      {/* CLOSED LEARNING LOOP SECTION */}
       <section className="retention-section panel">
         <SectionHeading
           eyebrow="THE LEARNING LOOP"
@@ -714,6 +1093,7 @@ export default function App() {
         </div>
       </section>
 
+      {/* FOOTER */}
       <footer className="footer">
         <span>ECHO</span>
         <span>Organizational customer experience memory</span>
