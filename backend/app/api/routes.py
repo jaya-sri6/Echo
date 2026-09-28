@@ -19,6 +19,12 @@ def health() -> dict[str, str]:
 	return {"status": "ok"}
 
 
+@router.get("/ready")
+def ready() -> dict[str, str]:
+	return {"status": "ready"}
+
+
+
 @router.post("/api/case", response_model=PipelineResult)
 def create_case(request: CaseRequest) -> Any:
 	if not request.message.strip():
@@ -28,7 +34,7 @@ def create_case(request: CaseRequest) -> Any:
 		)
 
 	try:
-		result = EchoPipeline.run(request.message)
+		result = EchoPipeline.run(request.message, retain_outcome=True)
 	except Exception:
 		raise HTTPException(
 			status_code=500,
@@ -62,4 +68,4 @@ def create_case(request: CaseRequest) -> Any:
 	return result
 
 
-__all__ = ["router", "CaseRequest", "health", "create_case"]
+__all__ = ["router", "CaseRequest", "health", "ready", "create_case"]

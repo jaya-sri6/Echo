@@ -203,13 +203,16 @@ def _as_mapping(value: Any) -> dict[str, Any]:
 
 def _context_mapping(context: CaseContext | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(context, CaseContext):
-        return context.model_dump(mode="json")
-    if not isinstance(context, Mapping):
+        normalized = context.model_dump(mode="json")
+    elif isinstance(context, Mapping):
+        normalized = dict(context)
+    else:
         raise TypeError("Case context must be a CaseContext or mapping.")
-    normalized = dict(context)
     concurrency = normalized.get("concurrency")
     if isinstance(concurrency, str):
         normalized["concurrency"] = _concurrency_tier(concurrency)
+    if normalized.get("problem_type") == "large_export_timeout":
+        normalized["problem_type"] = "export_timeout"
     return normalized
 
 
@@ -330,7 +333,7 @@ def _concurrency_tier(value: Any) -> str:
 def _related_problem(first: str, second: str) -> bool:
     if first == second:
         return True
-    export_problems = {"export_timeout", "export_performance"}
+    export_problems = {"export_timeout", "export_performance", "large_export_timeout"}
     return first in export_problems and second in export_problems
 
 

@@ -188,9 +188,19 @@ class EchoPipeline:
 			recalled_count = len(available_experiences)
 		else:
 			try:
-				recall_result = bank.recall(case)
-				available_experiences = list(bank.experiences)
-				recalled_count = len(recall_result.evidence)
+				recall_case = (
+					case.model_copy(update={"problem_type": "export_timeout"})
+					if case.problem_type == "large_export_timeout"
+					else case
+				)
+				recall_result = bank.recall(recall_case, limit=10)
+				available_experiences = [
+					item.experience if isinstance(item.experience, Experience)
+					else item.experience.to_domain() if hasattr(item.experience, "to_domain")
+					else Experience.model_validate(item.experience)
+					for item in recall_result.evidence
+				]
+				recalled_count = len(available_experiences)
 			except Exception:
 				available_experiences = ExperienceReasoner.load_seeded_experiences()
 				recalled_count = len(available_experiences)

@@ -57,24 +57,44 @@ All of these gaps have been resolved. The complete pipeline now runs **end-to-en
   - Added robust fallback handling: if Hindsight API is temporarily unreachable or experiences are empty, the pipeline gracefully falls back to deterministic domain heuristic agents without crashing.
 
 * **`backend/app/api/websocket.py`**
-  - Rewrote the WebSocket handler to stream a 12-event lifecycle:
-    1. `connection_ack` — client connection established
-    2. `stage_start: recall` — memory retrieval initiated
-    3. `memory_recalled` — past experiences found and formatted
-    4. `stage_start: triage` — incident classification
-    5. `agent_progress` — confidence scores & risk calculation
-    6. `stage_start: generation` — response drafting
-    7. `token_stream` — real-time solution generation tokens
-    8. `stage_start: simulation` — customer simulation & verification
-    9. `simulation_result` — sentiment & satisfaction score
-    10. `stage_start: retain` — saving experience to Hindsight
-    11. `experience_retained` — confirmation with memory ID
-    12. `pipeline_complete` — final resolution payload
+  - WebSocket Streaming Endpoint: `/ws/case`
+  - Client Request Contract:
+    ```json
+    {
+      "message": "Customer case: 600 GB export failed after timeout under high concurrency batch workload in synchronous mode."
+    }
+    ```
+  - Emits the exact 12-event domain lifecycle:
+    0. `case_started` (`conversation_agent`) — extracts technical CaseContext
+    1. `investigation_completed` (`investigator`) — checks actionable status
+    2. `hindsight_recall_completed` (`experience_memory`) — retrieves relevant memories from Hindsight
+    3. `applicability_assessed` (`experience_reasoner`) — evaluates applicability states (MATCH, PARTIAL_MATCH, BOUNDARY, NON_TRANSFERABLE)
+    4. `reflection_completed` (`experience_reasoner`) — synthesizes counterfactual reflection
+    5. `simulation_completed` (`simulator`) — evaluates 5 candidate actions deterministically
+    6. `guardian_validated` (`guardian`) — validates safety, reversibility, confidence thresholds
+    7. `recommendation_ready` (`resolution_agent`) — finalizes recommended action and justification
+    8. `execution_started` (`executor`) — lifecycle submission of recommended action to deterministic outcome simulator (not actual cloud execution)
+    9. `outcome_recorded` (`simulator`) — records predicted outcome and resolution time
+    10. `experience_retained` (`experience_memory`) — retains case context, action, outcome, lesson into memory
+    11. `pipeline_completed` (`pipeline`) — final complete PipelineResult payload
+  - Event Payload Structure:
+    ```json
+    {
+      "step_index": 0,
+      "event": "case_started",
+      "agent": "conversation_agent",
+      "status": "completed",
+      "message": "Customer message received; case context extracted.",
+      "timestamp": "2026-09-29T...",
+      "duration_ms": 1.25,
+      "data": {}
+    }
+    ```
 
 * **`backend/app/main.py`**
   - Configured CORS middleware with permissive origins to allow local development across any port.
   - Mounted `/dist` static frontend assets directly onto the root route (`/`) with SPA fallback, so running the backend automatically serves the full frontend.
-  - Registered `/health`, `/api/solve`, `/api/experiences`, and `/ws` endpoints.
+  - Registered `/health`, `/ready`, `/api/case` (REST), and `/ws/case` (WebSocket) endpoints.
 
 * **`backend/app/hindsight/client.py`**
   - Added timeout and retry guards for Hindsight REST endpoints.

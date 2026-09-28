@@ -175,14 +175,14 @@
       "name": "Repetitive Retry Thrashed Workload",
       "category": "historical_failure",
       "mode": "MEMORY_ON",
-      "action": "schedule_off_peak",
+      "action": "reduce_concurrency",
       "outcome": "SUCCESS",
-      "resolution_time_minutes": 90,
+      "resolution_time_minutes": 75,
       "escalated": false,
-      "changed_by_hindsight": true,
+      "changed_by_hindsight": false,
       "applicability_state": "PARTIAL_MATCH",
       "applicability_correct": true,
-      "reason": "Moving the export to a low-load period reduces shared-resource contention and restores predictable throughput for the job window."
+      "reason": "Reducing concurrency lowers the contention on the storage and database layers, restoring a stable export cadence without requiring a hard failover."
     },
     {
       "case_id": "BM-06",
@@ -247,15 +247,15 @@
     "failed_intervention_count": 0,
     "failed_intervention_rate": 0.0,
     "applicability_accuracy": 100.0,
-    "decision_change_count": 6,
-    "decision_change_rate": 75.0,
-    "average_resolution_time": 77.0
+    "decision_change_count": 5,
+    "decision_change_rate": 62.5,
+    "average_resolution_time": 75.1
   },
   "comparison": {
     "success_rate_delta": 75.0,
     "failure_rate_reduction": 62.5,
-    "resolution_time_savings_min": 60.0,
-    "decision_changes_triggered": 6,
+    "resolution_time_savings_min": 61.9,
+    "decision_changes_triggered": 5,
     "applicability_accuracy_on": 100.0
   }
 }

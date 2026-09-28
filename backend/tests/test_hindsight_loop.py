@@ -190,3 +190,120 @@ def test_real_outcome_retain_and_recall_learning_loop():
 	assert any("EXP-LEARNED-001: increase_timeout -> FAILURE" in ev for ev in res_learned.decision_evidence)
 	assert any("EXP-LEARNED-002: reduce_concurrency -> SUCCESS" in ev for ev in res_learned.decision_evidence)
 	assert res_learned.guardian is not None and res_learned.guardian.approved is True
+
+
+def test_bug001_only_recalled_evidence_is_used():
+	"""BUG-001 Test A: Verify reasoner receives and evaluates ONLY recalled evidence, not entire bank."""
+	bank = ExperienceMemory(connect_hindsight=False, seed=False)
+
+	# 1. Relevant experience (recalled by query): 400 GB sync daily_batch export
+	bank.retain(
+		ExperienceRecord(
+			experience_id="EXP-RELEVANT-01",
+			source="TEST-RELEVANT",
+			problem_type="export_timeout",
+			context=CaseContext(
+				export_size_gb=400,
+				concurrency="high",
+				workload="daily_batch",
+				execution_mode="sync",
+				problem_type="export_timeout",
+			),
+			diagnosis="Sync timeout",
+			action="reduce_concurrency",
+			outcome="Success after lowering concurrency",
+			status="SUCCESS",
+			lesson="Reduce concurrency helps",
+			applicability={"workload": ["daily_batch"], "execution_mode": ["sync"], "export_size_gb_min": 300},
+		),
+		status="SUCCESS",
+	)
+
+	# 2. Irrelevant experience (different problem type): must NOT be recalled or used
+	bank.retain(
+		ExperienceRecord(
+			experience_id="EXP-IRRELEVANT-99",
+			source="TEST-IRRELEVANT",
+			problem_type="database_connection_leak",
+			context=CaseContext(
+				export_size_gb=400,
+				concurrency="high",
+				workload="daily_batch",
+				execution_mode="sync",
+				problem_type="database_connection_leak",
+			),
+			diagnosis="DB leak",
+			action="schedule_off_peak",
+			outcome="Irrelevant outcome",
+			status="SUCCESS",
+			lesson="Irrelevant lesson",
+			applicability={"workload": ["daily_batch"]},
+		),
+		status="SUCCESS",
+	)
+
+	assert len(bank.experiences) == 2
+
+	case_message = "Customer's 400 GB daily export keeps timing out under high concurrency in sync mode."
+	res = EchoPipeline.run(case_message, memory_bank=bank)
+
+	assert res.status == "COMPLETE"
+	assert res.experience_reasoning is not None
+	# Ensure the irrelevant experience was NOT passed to or evaluated by the reasoner
+	evaluated_ids = set(res.experience_reasoning.applicability_states.keys())
+	assert "EXP-RELEVANT-01" in evaluated_ids
+	assert "EXP-IRRELEVANT-99" not in evaluated_ids
+	assert all("EXP-IRRELEVANT-99" not in ev for ev in res.decision_evidence)
+
+
+def test_bug001_no_memory_behavior_deterministic_and_functional():
+	"""BUG-001 Test B: When Hindsight has no useful memories, system does not fabricate evidence and functions deterministically."""
+	case = CaseContext(
+		export_size_gb=400,
+		concurrency="high",
+		workload="daily_batch",
+		execution_mode="sync",
+		problem_type="export_timeout",
+	)
+
+	# Direct reasoner invocation with empty memory
+	result = ExperienceReasoner.run(case, [])
+	assert result.decision_evidence == []
+	assert result.changed_by_hindsight is False
+	assert result.applicability_states == {}
+	assert result.recommended_action == "reduce_concurrency"
+	assert len(result.candidate_action_results) == 5
+
+	# Pipeline invocation when no applicable experience exists
+	pipeline_res = EchoPipeline.run(
+		"Customer's 400 GB daily export keeps timing out under high concurrency in sync mode.",
+		experiences=[],
+	)
+	assert pipeline_res.status == "NO_APPLICABLE_EXPERIENCE"
+	assert pipeline_res.final_recommendation is None
+	assert pipeline_res.decision_evidence == []
+
+
+def test_bug001_evidence_contract_consistency():
+	"""BUG-001 Test C: Verify the evidence contract shape is uniform and validated."""
+	bank = ExperienceMemory(connect_hindsight=False, seed=True)
+	case = CaseContext(
+		export_size_gb=600,
+		concurrency="high",
+		workload="nightly_batch",
+		execution_mode="sync",
+		problem_type="export_timeout",
+	)
+	recalled = bank.recall(case)
+
+	assert recalled.evidence
+	for ev in recalled.evidence:
+		assert hasattr(ev, "experience")
+		assert hasattr(ev, "applicability")
+		assert ev.experience_id
+		# Validates directly to canonical domain model
+		domain_exp = Experience.model_validate(ev.experience)
+		assert domain_exp.experience_id == ev.experience_id
+		assert domain_exp.action
+		assert domain_exp.status
+

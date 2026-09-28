@@ -5,7 +5,8 @@
 - **Architecture**: Frozen Echo MVP (5 Specialized Pipeline Agents + Hindsight Memory Subsystem + Deterministic Simulator + React 18 SPA)
 - **Extraneous Infrastructure**: **Zero** (Preserved frozen MVP architecture; no Redis, Kafka, Kubernetes, or vector DBs)
 - **Deployment Topology**: Single-port unified FastAPI + Static SPA asset mount on port `8000`, with optional multi-container `docker-compose.yml` (Ports 8000/3000)
-- **Verification Status**: **100% PASS** across all verification phases (Phases 00 through 08 + Final)
+- **Verification Status**: **100% PASS** across all verification phases (Track A & Track B Verified)
+- **Stable Checkpoint**: Tag `echo-stable-01`
 
 ---
 
@@ -13,11 +14,11 @@
 
 | Role | Lead | Tracks / Tasks | Status | Key Deliverable |
 | :--- | :--- | :--- | :--- | :--- |
-| **Track A — Architecture & Backend** | Person 1 & 2 | Tasks T01–T10 | **READY** | 5 specialized agents, `EchoPipeline`, REST & WebSocket endpoints |
-| **Track A — Memory Engine Lead** | Person 2 | Tasks T11–T20 | **READY** | `ExperienceMemory`, `HindsightClient`, retain/recall/reflect loop |
-| **Track B — Frontend Lead** | Person 5 | Tasks T21–T25 | **READY** | React 18 SPA, live status indicators, counterfactual comparison cards |
-| **Track B — Evaluation Lead** | Person 4 | Tasks T26–T30 | **READY** | 8 canonical benchmark cases, `metrics.py`, comparative results (+75% success) |
-| **Primary Verification Lead** | Antigravity | Stabilization & Audit | **READY** | `brain/context.md`, `verification/` phase audits, end-to-end tests |
+| **Track A — Architecture & Backend** | Person 1 & 2 | Tasks T01–T10 | **VERIFIED (PASS)** | 5 specialized agents, `EchoPipeline`, REST & WebSocket endpoints, 74 tests |
+| **Track A — Memory Engine Lead** | Person 2 | Tasks T11–T20 | **VERIFIED (PASS)** | `ExperienceMemory`, `HindsightClient`, retain/recall/reflect loop |
+| **Track B — Frontend Integration** | Person 5 | Track B Integration | **VERIFIED (PASS)** | Real 12-event WebSocket stream, REST fallback, error alerts, zero fake timers |
+| **Track B — Evaluation & Deployment** | Person 4 & 6 | Benchmarks & Docker | **VERIFIED (PASS)** | 8 canonical benchmark cases, Docker Compose multi-container & single-port models |
+| **Track C — Frontend Redesign** | Person 3 & 5 | UI Redesign | **PRESERVED** | Track C redesign work safely preserved and untouched |
 
 ---
 
@@ -37,7 +38,8 @@ Case → Conversation → Investigate → Hindsight Recall → Applicability →
 ### 3. Real 12-Event WebSocket Stream
 - Endpoint: `/ws/case`
 - Streams real-time sequential events (`case_started` through `pipeline_completed`) with timestamps, step indices, and measured durations.
-- Verified by: `backend/tests/test_websocket.py::test_websocket_emits_start_and_final_recommendation_then_closes_cleanly`
+- Verified live over direct container port 8000 and nginx reverse proxy port 3000.
+- Verified by: `backend/tests/test_websocket.py`
 
 ### 4. Reproducible Evaluation Suite
 - Suite: 8 canonical benchmark cases
@@ -50,34 +52,31 @@ Case → Conversation → Investigate → Hindsight Recall → Applicability →
 
 ## 4. Run & Verification Commands
 
-### Run Full Pytest Suite (69 Tests)
-```powershell
-$env:PYTHONPATH="."
-py -m pytest backend/tests -v
+### Run Full Pytest Suite (74 Tests Passed, 1 Skipped)
+```bash
+python3 -m pytest backend/tests -v
 ```
 
 ### Run Benchmark Evaluation
-```powershell
-$env:PYTHONPATH="."
-py evaluation/run_benchmark.py
+```bash
+python3 evaluation/run_benchmark.py
 ```
 
 ### Run Hero Case CLI Demo
-```powershell
-$env:PYTHONPATH="."
-py demo/demo_runner.py
+```bash
+python3 demo/demo_runner.py e2e
 ```
 
 ### Build Frontend
-```powershell
-cd frontend
-npm run build
+```bash
+npm --prefix frontend run build
 ```
 
-### Launch Unified Server
-```powershell
-$env:PYTHONPATH="."
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+### Docker Compose
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
 ```
 
 ---

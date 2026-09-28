@@ -98,12 +98,28 @@ export interface PipelineResult {
   final_recommendation?: string;
   changed_by_hindsight: boolean;
   decision_evidence: string[];
+  simulation?: SimulationResult;
+  retained_experience_id?: string | null;
   errors: string[];
 }
 
+export type LifecycleEventName =
+  | 'case_started'
+  | 'investigation_completed'
+  | 'hindsight_recall_completed'
+  | 'applicability_assessed'
+  | 'reflection_completed'
+  | 'simulation_completed'
+  | 'guardian_validated'
+  | 'recommendation_ready'
+  | 'execution_started'
+  | 'outcome_recorded'
+  | 'experience_retained'
+  | 'pipeline_completed';
+
 export interface AgentEvent {
   step_index?: number;
-  event: string;
+  event: LifecycleEventName | string;
   agent: string;
   status: string;
   message: string;

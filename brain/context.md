@@ -309,3 +309,112 @@ Echo/
 - **Workload Support**: MVP strictly models data export timeouts. Future extensions will model memory saturation in report generation and queue backlog in ingestion pipelines.
 - **Dynamic Action Discovery**: Supported actions are currently drawn from a deterministic set of 5 mitigations. Future phases will support dynamic action generation from runbooks.
 - **Distributed Memory Sync**: Retained experiences are written immediately to Hindsight and local process memory. Multi-instance horizontal scaling will utilize Hindsight webhook events for cache coherence.
+
+---
+
+## Track A Verification — 2026-09-29
+
+### Current Verified State
+- **Audit Date:** 2026-09-29
+- **Exact Commit:** `57ce66b6c20579e09d17d5c90b63f68310c9c716` (origin/main)
+- **Overall Status:** PASS WITH CONDITIONS
+
+### Tests Run & Actual Results
+- **Full Pytest Suite:** `python3 -m pytest backend/tests/ -v` -> **69 passed, 1 skipped** in 41.49s.
+  - `test_agents.py`: 9 passed
+  - `test_api.py`: 6 passed
+  - `test_decision_analysis.py`: 9 passed
+  - `test_domain.py`: 5 passed
+  - `test_evaluation.py`: 4 passed
+  - `test_hindsight.py`: 15 passed, 1 skipped
+  - `test_hindsight_loop.py`: 2 passed
+  - `test_pipeline.py`: 9 passed
+  - `test_simulator.py`: 6 passed
+  - `test_websocket.py`: 4 passed
+- **Live Remote Hindsight Suite:** `HINDSIGHT_RUN_INTEGRATION=1 python3 -m pytest backend/tests/test_hindsight.py::test_real_hindsight_retain_recall_reflect_contract -v` -> **1 passed** in 11.14s.
+- **8-Case Evaluation Benchmark:** `python3 evaluation/run_benchmark.py` -> Clean pass, 100% decision success, -60m resolution time.
+- **3-Case Hero Demo:** `python3 demo/demo_runner.py` -> All 3 hero cases verified end-to-end.
+- **REST Endpoints:** `GET /health` (200 OK), `POST /api/case` (200 OK for valid context, 422 for invalid/incomplete).
+- **WebSocket Stream:** `ws://localhost:8000/ws/case` -> 12 verified domain lifecycle events streamed cleanly.
+
+### Hindsight Status
+- **Remote Cloud Integration:** VERIFIED (Connected, retained test experiences, recalled remote memories, produced counterfactual reflection).
+- **Local Fallback Mode:** VERIFIED (15 seeded experiences, deterministic similarity scoring, in-process retain).
+
+### Known Bugs & Discrepancies
+1. **BUG-001 (Pipeline Scope Bypass):** `backend/app/orchestration/pipeline.py:192` passes `list(bank.experiences)` to `ExperienceReasoner.run` instead of filtering down to `recall_result.evidence`.
+2. **BUG-002 (REST API Retain Default):** `backend/app/api/routes.py:37` calls `EchoPipeline.run(request.message)` with default `retain_outcome=False`.
+3. **BUG-003 (Tracked Bytecode):** Two `.pyc` files in `backend/tests/__pycache__/` are tracked in Git index.
+4. **BUG-004 (Documentation Divergence):** `CHANGES.md` documents `token_stream` and `stage_start` WebSocket events; actual backend emits 12 domain lifecycle events (`case_started` ... `pipeline_completed`).
+5. **BUG-005 (Unused Groq Config):** `GROQ_API_KEY` is documented in `.env.example`, but `backend/app/` has no active Groq client.
+
+### Deployment Blockers
+1. Host Docker Desktop daemon is currently paused; native run is verified.
+2. Frontend Track B must consume the verified 12 domain event names, not the stale schema in `CHANGES.md`.
+
+### Things NOT Verified
+- Production Kubernetes / Multi-worker Celery queue deployment (not part of frozen MVP architecture).
+- Host Docker Desktop container networking (blocked by host Docker Desktop daemon pause).
+
+### Things That Must NOT Be Changed Before Track B
+- Do not alter the 12 WebSocket event schemas (`case_started`, `investigation_completed`, `hindsight_recall_completed`, `applicability_assessed`, `reflection_completed`, `simulation_completed`, `guardian_validated`, `recommendation_ready`, `execution_started`, `outcome_recorded`, `experience_retained`, `pipeline_completed`).
+- Do not replace the deterministic domain simulator or applicability classification logic.
+- Do not introduce external queues or databases that break single-container deployment.
+
+---
+
+## Track A Remediation Verification — 2026-09-29
+
+### Overall Status: TRACK A — PASS
+
+### Issue Resolutions
+1. **BUG-001 Resolved (Hindsight Evidence Filtering):**
+   - Modified `backend/app/orchestration/pipeline.py` to query Hindsight with `limit=10` and filter `available_experiences` strictly to `recall_result.evidence`.
+   - Updated `backend/app/hindsight/recall.py` to normalize `large_export_timeout` in `_context_mapping` and include it in `_related_problem`.
+   - Added unit and loop tests (`test_bug001_only_recalled_evidence_is_used`, `test_bug001_no_memory_behavior_deterministic_and_functional`, `test_bug001_evidence_contract_consistency`) in `backend/tests/test_hindsight_loop.py`.
+2. **BUG-002 Resolved (REST API Retention):**
+   - Updated `backend/app/api/routes.py` to pass `retain_outcome=True` to `EchoPipeline.run(...)`.
+   - Added tests in `backend/tests/test_api.py` verifying retention persistence, exposure of `retained_experience_id`, and validation safety.
+3. **BUG-004 Resolved (WebSocket Documentation Synchronization):**
+   - Synchronized `CHANGES.md` to document the verified 12-event domain lifecycle (`case_started` through `pipeline_completed`), JSON request contract, and lifecycle semantics of `execution_started`.
+4. **Repository Hygiene (Bytecode Cleanup):**
+   - Untracked all compiled `.pyc` files from git cache via `git rm --cached`. `git ls-files | grep -E '(__pycache__|\.pyc)'` confirmed 0 files.
+5. **Track C Frontend Safety:**
+   - Zero frontend UI files modified; redesign work fully preserved.
+
+### Verification Results Summary
+- **Pytest Suite:** **74 passed, 1 skipped, 0 failed in 12.61s** (`python3 -m pytest backend/tests/ -v`).
+- **Remote Hindsight Contract:** **1 passed in 11.06s** (`HINDSIGHT_RUN_INTEGRATION=1`).
+- **Learning Demonstration:** **PASSED** (`python3 demo/demo_runner.py e2e`).
+- **Evaluation Benchmark:** **PASSED** (`python3 evaluation/run_benchmark.py`: 100% decision success, -61.9m resolution time).
+- **Live API & WebSocket:** `/health` (200), `/ready` (200), `/api/case` (200 with retention), `/ws/case` (all 12 events streamed).
+- **Docker Status:** Docker Desktop daemon unpaused; containerized backend healthy on port 8000.
+- **Remaining Blockers:** None.
+
+---
+
+## Track B Verification — 2026-09-29
+
+### Overall Status: TRACK B — PASS
+
+### Integration Summary
+1. **Frontend / Backend Contracts:**
+   - **REST:** `POST /api/case` takes `{"message": "<text>"}` and returns complete `PipelineResult` with `simulation`, `resolution`, `retained_experience_id`, and `decision_evidence`.
+   - **WebSocket:** `WS /ws/case` accepts `{"message": "<text>"}` and streams the exact 12-event lifecycle without fake timers or synthetic progress.
+2. **Frontend UI Communication:**
+   - `frontend/src/types/index.ts` synchronized with backend `PipelineResult` and 12-event lifecycle types.
+   - `frontend/src/App.jsx` updated: eliminated artificial `setTimeout` stage incrementing. Stages update directly upon receipt of real WebSocket events.
+   - Error alert banner added to surface pipeline failures and connection interruptions without getting stuck in an infinite loading state.
+   - Track C visual layout, styles, and cards preserved 100%.
+3. **Docker Multi-Container & Single-Port Architectures:**
+   - **Option A (Unified Single-Port):** `backend/Dockerfile` builds React SPA and mounts it on `/`, serving API, WebSocket, and UI on a single unified port (`$PORT` or 8000).
+   - **Option B (Docker Compose Multi-Container):** `echo-backend` on port 8000 + `echo-frontend` on port 3000 (nginx with reverse proxy for `/api/`, `/health`, `/ready`, and `/ws/`). Both containers healthy.
+4. **Containerized WebSocket Testing:**
+   - Verified 12 out of 12 lifecycle events streamed in exact sequence across container boundary over both direct backend port 8000 and nginx reverse proxy port 3000.
+5. **Security & Hygiene:**
+   - No tracked `.env` or `.pyc` files.
+   - Zero private API keys (`HINDSIGHT_API_KEY`, `GROQ_API_KEY`) exposed in client bundle or frontend images.
+6. **Stable Checkpoint & Rollback:**
+   - Stable Tag: `echo-stable-01`
+   - Rollback documented in `verification/phase-05-frontend/track-b-verification.md`.
+

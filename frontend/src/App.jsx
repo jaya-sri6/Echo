@@ -95,9 +95,10 @@ export default function App() {
   const [liveBackendData, setLiveBackendData] = useState(null);
   const [streamEvents, setStreamEvents] = useState([]);
   const [isWsStreaming, setIsWsStreaming] = useState(false);
+  const [pipelineError, setPipelineError] = useState(null);
 
   const currentCase = caseProfiles[selectedCase];
-  const isRunning = runStage > 0 && runStage < 10;
+  const isRunning = (runStage > 0 && runStage < 10) && !pipelineError;
   const hasMemory = runStage >= 4 || selectedCase === 'boundary';
   const hasDecision = runStage >= 7;
   const hasOutcome = runStage >= 8;
@@ -128,16 +129,11 @@ export default function App() {
     setLiveBackendData(null);
     setStreamEvents([]);
     setIsWsStreaming(false);
+    setPipelineError(null);
   };
 
-  // Only use timer fallback if WebSocket is NOT streaming real events
-  useEffect(() => {
-    if (!isRunning || isWsStreaming) return undefined;
-    const timer = window.setTimeout(() => setRunStage((stage) => stage + 1), 650);
-    return () => window.clearTimeout(timer);
-  }, [isRunning, runStage, isWsStreaming]);
-
   async function handleRunInvestigation() {
+    setPipelineError(null);
     setRunStage(1);
     setSelectedExperience('EXP-031');
     setLiveBackendData(null);
@@ -162,9 +158,11 @@ export default function App() {
       pipeline_completed: 10,
     };
 
+    let wsResolved = false;
+    let wsErrored = false;
+
     try {
-      let wsResolved = false;
-      const socket = subscribeToCaseInvestigation(
+      subscribeToCaseInvestigation(
         messageToRun,
         (event) => {
           setStreamEvents((prev) => [...prev, event]);
@@ -172,41 +170,64 @@ export default function App() {
           if (targetStage !== undefined) {
             setRunStage(targetStage);
           }
-          if (event.event === 'pipeline_completed' && event.data) {
+          if (event.status === 'failed') {
+            setPipelineError(event.message || `Pipeline failed at step: ${event.event}`);
+          }
+          if (event.event === 'pipeline_completed') {
             wsResolved = true;
-            setLiveBackendData(event.data);
-            setRunStage(10);
             setIsWsStreaming(false);
+            if (event.data && event.data.status === 'COMPLETE') {
+              setLiveBackendData(event.data);
+              setRunStage(10);
+            } else if (event.status === 'failed') {
+              setPipelineError(event.message || 'The pipeline could not complete successfully.');
+            }
           }
         },
         () => {
           setIsWsStreaming(false);
+          // If socket closed without completing and no error captured, fallback to REST
+          if (!wsResolved && !wsErrored) {
+            apiInvestigate(messageToRun)
+              .then((res) => {
+                if (res && res.status === 'COMPLETE') {
+                  setLiveBackendData(res);
+                  setRunStage(10);
+                } else {
+                  setPipelineError(res?.errors?.[0] || 'Investigation failed');
+                  setRunStage(0);
+                }
+              })
+              .catch((err) => {
+                setPipelineError(err.message || 'Investigation request failed');
+                setRunStage(0);
+              });
+          }
         },
-        async () => {
-          // If WebSocket encounters an error, fall back to REST API
+        (err) => {
+          wsErrored = true;
           setIsWsStreaming(false);
-          if (!wsResolved) {
-            try {
-              const res = await apiInvestigate(messageToRun);
-              if (res) {
+          // Socket connection error: seamlessly fall back to REST API
+          apiInvestigate(messageToRun)
+            .then((res) => {
+              if (res && res.status === 'COMPLETE') {
                 setLiveBackendData(res);
                 setRunStage(10);
+              } else {
+                setPipelineError(res?.errors?.[0] || 'Investigation failed');
+                setRunStage(0);
               }
-            } catch {
-              // Seamless local fallback
-            }
-          }
+            })
+            .catch((apiErr) => {
+              setPipelineError(apiErr.message || 'Investigation failed to connect to backend.');
+              setRunStage(0);
+            });
         }
       );
-
-      // Parallel REST backup to guarantee data resolution
-      apiInvestigate(messageToRun)
-        .then((res) => {
-          if (res) setLiveBackendData(res);
-        })
-        .catch(() => {});
-    } catch {
+    } catch (err) {
       setIsWsStreaming(false);
+      setPipelineError(err.message || 'Failed to initialize investigation.');
+      setRunStage(0);
     }
   }
 
@@ -336,6 +357,21 @@ export default function App() {
                 : 'Experience retained for next time'
               : 'Watch 5 agents reason through memory'}
           </span>
+          {pipelineError && (
+            <div
+              style={{
+                marginTop: '10px',
+                padding: '8px 12px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid #ef4444',
+                borderRadius: '4px',
+                color: '#fca5a5',
+                fontSize: '13px',
+              }}
+            >
+              <strong>Error:</strong> {pipelineError}
+            </div>
+          )}
         </div>
         <div className="case-tags">
           {currentCase.tags.map((tag, index) => (
