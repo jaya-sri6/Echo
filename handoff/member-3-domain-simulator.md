@@ -15,6 +15,7 @@ Domain / Simulator Lead
 - Added seeded historical experiences dataset for export-timeout and export-performance scenarios.
 - Created canonical demo scenarios for failure learning, learned-experience reuse, and non-transferable boundary behavior.
 - Added Domain / Simulator tests covering domain models, dataset validation, simulator outcomes, determinism, and canonical scenarios.
+- Added deterministic Decision Analysis for experience applicability, candidate counterfactuals, recommendations, and decision evidence.
 
 ## Files Changed
 - backend/app/domain/case_context.py
@@ -33,6 +34,13 @@ This work establishes the deterministic domain layer for Echo's B2B SaaS export-
 
 ## How It Works
 The domain layer models canonical export contexts and historical experiences. The simulator evaluates a deterministic set of rules tied to export size, concurrency, workload, execution mode, and chosen action. These rules produce structured outcomes that are predictable and easy for the rest of the team to reuse in demo flows and integration scenarios.
+
+## Decision Analysis Enhancement
+`backend/app/domain/decision_analysis.py` compares all five context dimensions. Exact agreement is a `MATCH`; explicit export-size bounds can produce a `BOUNDARY`; a different problem type is `NON_TRANSFERABLE`; other usable mismatches are `PARTIAL_MATCH`. Partial evidence is labeled and is not presented as a direct transfer.
+
+Candidate actions are evaluated by calling the existing `ExportSimulator`; its business rules are not duplicated. Recommendations prioritize simulated outcome, then the strongest applicable historical success for that action, then escalation and resolution time. The result exposes each simulation, the applicable historical status evidence, and whether hindsight improves on the initial action.
+
+Seeded experiences retain their structured historical status. Their omitted nested `context.problem_type` is filled from the existing top-level experience problem type when the model is constructed, so seeded records can be consumed directly.
 
 ## Inputs
 - export_size_gb
@@ -80,6 +88,8 @@ These represent:
 This work is designed to be consumed by downstream application logic and orchestration in a deterministic, typed way. No API, agent, orchestrator, or Hindsight implementation was added here.
 
 ## Tests Performed
+- Decision Analysis applicability, counterfactual comparison, critical hindsight change, 20 GB boundary, and determinism tests: `py -3 -m pytest backend/tests/test_decision_analysis.py -q` (9 passed).
+- Existing domain and simulator regression tests: `py -3 -m pytest backend/tests/test_domain.py backend/tests/test_simulator.py -q`.
 - Domain model import and construction checks
 - Seeded dataset validation
 - Simulator critical scenario checks
