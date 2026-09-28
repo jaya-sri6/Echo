@@ -1,0 +1,27 @@
+{
+  "case_id": "case_03_boundary",
+  "customer_statement": "Our 20 GB export is timing out.",
+  "context": {
+    "export_size_gb": 20,
+    "concurrency": "low",
+    "workload": "interactive",
+    "execution_mode": "sync"
+  },
+  "historical_memory": {
+    "available": true,
+    "notes": "The system may contain previous experiences involving large exports with high concurrency and nightly batch workloads.",
+    "transfer_confidence": "LOW"
+  },
+  "expected_behavior": {
+    "match_quality": "LOW",
+    "transfer_confidence": "LOW",
+    "outcome": "SUCCESS",
+    "reason": "Historical memory exists, but the context does not sufficiently match the large-export saturation pattern; the small interactive sync case should not automatically inherit large-batch guidance.",
+    "lesson": "Large-export experience should not be blindly transferred to small interactive workloads without sufficient contextual similarity."
+  },
+  "metadata": {
+    "scenario_type": "DO_NOT_BLINDLY_TRANSFER_MEMORY",
+    "domain": "b2b_saas_export_support",
+    "synthetic": true
+  }
+}

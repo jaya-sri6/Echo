@@ -1,0 +1,25 @@
+{
+  "case_id": "case_01_failure",
+  "customer_statement": "Our 600 GB nightly export is timing out.",
+  "context": {
+    "export_size_gb": 600,
+    "concurrency": "high",
+    "workload": "nightly_batch",
+    "execution_mode": "sync"
+  },
+  "initial_action": {
+    "action": "increase_timeout",
+    "expected_outcome": "FAILURE"
+  },
+  "expected_behavior": {
+    "outcome": "FAILURE",
+    "escalated": true,
+    "reason": "Increasing the timeout does not resolve processing saturation caused by high concurrency during a large nightly batch export.",
+    "lesson": "For very large nightly batch exports with high concurrency, a longer timeout does not fix the root saturation problem; the workload must be restructured or chunked."
+  },
+  "metadata": {
+    "scenario_type": "LEARN_FROM_FAILURE",
+    "domain": "b2b_saas_export_support",
+    "synthetic": true
+  }
+}

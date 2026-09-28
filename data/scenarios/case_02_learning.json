@@ -1,0 +1,40 @@
+{
+  "case_id": "case_02_learning",
+  "customer_statement": "Our 600 GB nightly export is timing out again.",
+  "context": {
+    "export_size_gb": 600,
+    "concurrency": "high",
+    "workload": "nightly_batch",
+    "execution_mode": "sync"
+  },
+  "historical_memory": {
+    "source": "case_01_failure",
+    "lesson": "For very large nightly batch exports with high concurrency, a longer timeout does not fix the root saturation problem; the workload must be restructured or chunked."
+  },
+  "candidate_actions": [
+    {
+      "action": "increase_timeout",
+      "expected_outcome": "FAILURE"
+    },
+    {
+      "action": "async_chunked_export",
+      "expected_outcome": "SUCCESS"
+    },
+    {
+      "action": "reduce_concurrency",
+      "expected_outcome": "SUCCESS"
+    }
+  ],
+  "expected_behavior": {
+    "preferred_action": "async_chunked_export",
+    "outcome": "SUCCESS",
+    "escalated": false,
+    "reason": "Historical memory indicates that large nightly batch exports under high concurrency saturate the system, so chunking the export into asynchronous segments is the preferred remedy.",
+    "lesson": "Historical memory can guide the next decision when the new case matches the same failure pattern."
+  },
+  "metadata": {
+    "scenario_type": "USE_LEARNED_EXPERIENCE",
+    "domain": "b2b_saas_export_support",
+    "synthetic": true
+  }
+}
