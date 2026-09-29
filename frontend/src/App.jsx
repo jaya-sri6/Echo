@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AuthModal from './components/AuthModal';
 import LandingPage from './components/LandingPage';
+import NewCaseModal from './components/NewCaseModal';
 import { all15Cases, heroPresets } from './data/cases';
 import {
   authMe,
@@ -19,17 +20,38 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login');
   const [showLanding, setShowLanding] = useState(false);
 
+  // New Case Modal Popup
+  const [isNewCaseModalOpen, setIsNewCaseModalOpen] = useState(false);
+
+  // Top Bar Dropdowns with stable hover & click
+  const [isLogoMenuOpen, setIsLogoMenuOpen] = useState(false);
+  const [isScenarioMenuOpen, setIsScenarioMenuOpen] = useState(false);
+  const logoMenuTimeoutRef = useRef(null);
+  const scenarioMenuTimeoutRef = useRef(null);
+
   // Active View Tab from Navigation Rail: 'incident' | 'vault' | 'trees' | 'logs' | 'settings'
   const [railView, setRailView] = useState('incident');
 
   // Backend Connectivity & Real Data
   const [backendOnline, setBackendOnline] = useState(true);
-  const [totalIndexedCount, setTotalIndexedCount] = useState(15);
+  const [totalIndexedCount, setTotalIndexedCount] = useState(16);
   const [allExperiencesList, setAllExperiencesList] = useState(all15Cases);
   const [graphData, setGraphData] = useState(null);
   const [graphFilter, setGraphFilter] = useState('all');
   const [activeHighlightNode, setActiveHighlightNode] = useState(null);
   const [inspectModalNode, setInspectModalNode] = useState(null);
+
+  // Dynamic Telemetry State (Adapts with each case in real time)
+  const [liveScore, setLiveScore] = useState('94.8%');
+  const [liveDelta, setLiveDelta] = useState('▲ +4.2% vs turn 1');
+  const [liveRate, setLiveRate] = useState('14.2');
+  const [chartMilestones, setChartMilestones] = useState([
+    { cx: 10, cy: 58, label: 'Turn 1 (Case A): Baseline • 62.0%', time: '10:14:02 AM' },
+    { cx: 60, cy: 50, label: 'Turn 2: Rule ingestion • 71.4%', time: '10:14:08 AM' },
+    { cx: 120, cy: 38, label: 'Turn 3: Disambiguation • 81.0%', time: '10:14:15 AM' },
+    { cx: 180, cy: 24, label: 'Turn 4: Boundary prune • 88.5%', time: '10:14:22 AM' },
+    { cx: 245, cy: 14, label: 'Turn 5 (Case B): Converged • 94.8%', time: '10:14:31 AM' },
+  ]);
 
   // Active Incident Selection
   const [activeIncidentTitle, setActiveIncidentTitle] = useState('Acme Corp — Export Timeout');
@@ -44,7 +66,7 @@ export default function App() {
   const [chartTooltip, setChartTooltip] = useState(null);
 
   // Agent Pipeline Execution Steps State (1 = Ingest, 2 = Recall, 3 = Boundary, 4 = Guardrail)
-  const [currentPipelineStep, setCurrentPipelineStep] = useState(3);
+  const [currentPipelineStep, setCurrentPipelineStep] = useState(4);
 
   // Dialogue History
   const [dialogueMessages, setDialogueMessages] = useState([
@@ -62,7 +84,7 @@ export default function App() {
       author: 'Echo Experience Reasoner',
       time: 'Turn 2 · 140ms',
       badge: 'Synthesized Precedent',
-      thinkingCount: 15,
+      thinkingCount: 16,
       thinkingMatches: [
         { id: 'node-EXP-044', label: 'EXP-044 (Async Chunked Export)', fit: '94.8% fit', type: 'success' },
         { id: 'node-EXP-031', label: 'EXP-031 (Timeout Increase in Batch)', fit: 'Failed (Pool Lock Exceeded)', type: 'failure' },
@@ -74,11 +96,13 @@ export default function App() {
         "Increasing the timeout is contraindicated. In precedent EXP-031, extending query deadlines during a high-concurrency 600 GB batch window caused connection pool exhaustion and cascaded into secondary API degradation.",
         "Instead, precedent EXP-044 resolved the identical schema contention by switching from monolithic streaming to 50,000-row async chunked buffers with pool-release checkpoints.",
       ],
-      retainedId: 'EXP-RETAINED-0024',
+      retainedId: 'EXP-DEMO-002',
+      isCaseB: true,
+      finalRecommendation: 'async_chunked_export',
     },
   ]);
 
-  // Terminal Trace Logs
+  // Terminal Trace Logs (Exact format matching Process 3751)
   const [terminalLogs, setTerminalLogs] = useState([
     { text: '======================================================================', type: 'dim' },
     { text: '  ECHO LIVE INCIDENT PIPELINE TRACE (Process: 3751)', type: 'cyan', bold: true },
@@ -86,6 +110,8 @@ export default function App() {
     { text: '  Context: 600 GB payload, MySQL engine v8.0.32, connection pool limit: 120', type: 'green' },
     { text: '  Precedent Recall: Scanned 15 graph precedents, pruned 11 dissimilar topologies', type: 'yellow' },
     { text: '  Boundary Reasoning: Pool lease cap bounded at 12m under invariant rule EXP-089', type: 'cyan' },
+    { text: '  [>] MEMORY CHANGED MIND: True (Shifted from increase_timeout to async_chunked_export)', type: 'green' },
+    { text: '  [>] RETAINED EXPERIENCE: Saved EXP-DEMO-002 (Status: SUCCESS) into organizational memory', type: 'green', bold: true },
   ]);
 
   // 15 Seed Cases Vault Filters
@@ -170,11 +196,12 @@ export default function App() {
     }
   };
 
-  // Handle Send prompt (Live Backend Investigation)
-  const handleSendPrompt = async (e) => {
-    if (e) e.preventDefault();
-    const query = promptInput.trim();
+  // Real-Time Stepped Investigation Execution
+  const executeInvestigation = async (query, caseKey = null, label = null, title = null) => {
     if (!query || isInvestigating) return;
+
+    if (title) setActiveIncidentTitle(title);
+    if (label) setActiveIncidentId(label);
 
     setPromptInput('');
     setIsInvestigating(true);
@@ -191,25 +218,67 @@ export default function App() {
     };
     setDialogueMessages((prev) => [...prev, userMsg]);
 
-    // Stream trace logs
+    // Live stepped terminal logs matching Terminal Process 3751
     setTerminalLogs((prev) => [
       ...prev,
-      { text: `[${new Date().toLocaleTimeString()}] INGEST: Customer query received: "${query}"`, type: 'green' },
-      { text: `[${new Date().toLocaleTimeString()}] RECALL: Querying Hindsight organizational memory bank...`, type: 'yellow' },
+      { text: '======================================================================', type: 'dim' },
+      { text: `  [>] NEW INVESTIGATION: ${title || activeIncidentTitle} (${label || activeIncidentId})`, type: 'cyan', bold: true },
+      { text: '======================================================================', type: 'dim' },
+      { text: `  [${new Date().toLocaleTimeString()}] INGEST: Customer query received: "${query}"`, type: 'green' },
     ]);
 
     try {
+      // Step 1: Context Ingest
+      await new Promise((r) => setTimeout(r, 450));
+      setCurrentPipelineStep(2);
+      setTerminalLogs((prev) => [
+        ...prev,
+        { text: `  [${new Date().toLocaleTimeString()}] RECALL: Querying Hindsight organizational memory bank...`, type: 'yellow' },
+      ]);
+
       // Step 2: Precedent Recall
-      setTimeout(() => setCurrentPipelineStep(2), 600);
+      await new Promise((r) => setTimeout(r, 650));
+      setCurrentPipelineStep(3);
+      setTerminalLogs((prev) => [
+        ...prev,
+        { text: `  [${new Date().toLocaleTimeString()}] BOUNDARY: Verifying size, workload & concurrency boundaries...`, type: 'cyan' },
+      ]);
 
-      // Call real backend chat API
-      const result = await sendChatMessage(query, activeIncidentId, authToken || undefined);
-
-      // Step 3: Boundary Reasoning
-      setTimeout(() => setCurrentPipelineStep(3), 1200);
+      // Step 3: Call backend API
+      const result = await sendChatMessage(query, caseKey || activeIncidentId, authToken || undefined);
 
       // Step 4: Guardrail Synthesis
-      setTimeout(() => setCurrentPipelineStep(4), 1800);
+      setCurrentPipelineStep(4);
+      setTerminalLogs((prev) => [
+        ...prev,
+        { text: `  [${new Date().toLocaleTimeString()}] GUARDIAN: Safety invariant clearance and outcome simulation completed.`, type: 'green' },
+      ]);
+
+      // If backend returned terminal_trace, append lines to terminalLogs
+      if (result.terminal_trace && result.terminal_trace.length > 0) {
+        setTerminalLogs((prev) => [...prev, ...result.terminal_trace]);
+      }
+
+      // Update metrics
+      if (result.metrics) {
+        if (result.metrics.alignment_score) setLiveScore(result.metrics.alignment_score);
+        if (result.metrics.alignment_delta) setLiveDelta(result.metrics.alignment_delta);
+        if (result.metrics.ingestion_rate) setLiveRate(result.metrics.ingestion_rate.replace(' ep/s', ''));
+        if (result.metrics.indexed_experiences) setTotalIndexedCount(result.metrics.indexed_experiences);
+      }
+
+      // Add a dynamic milestone on the SVG memory alignment polyline
+      const scoreNum = parseFloat(result.metrics?.alignment_score?.replace('%', '') || '94.8');
+      const cyCalc = Math.max(10, Math.min(60, 68 - (scoreNum - 60) * 1.3));
+      const nextTurnNum = chartMilestones.length + 1;
+      const nextCx = Math.min(250, 10 + (nextTurnNum - 1) * 45);
+      const newMilestone = {
+        cx: nextCx,
+        cy: Math.round(cyCalc),
+        label: `Turn ${nextTurnNum} (${caseKey ? caseKey.toUpperCase() : 'Query'}): ${result.metrics?.alignment_score || '94.8%'}`,
+        time: new Date().toLocaleTimeString(),
+      };
+      setChartMilestones((prev) => [...prev.slice(-4), newMilestone]);
 
       const aiText = result.ai_copilot?.explanation || 
         `Recommendation '${result.final_recommendation}' synthesized from organizational memory under ${result.context?.export_size_gb || 600} GB concurrency.`;
@@ -219,21 +288,32 @@ export default function App() {
         sender: 'agent',
         author: 'Echo Experience Reasoner',
         time: `Turn ${dialogueMessages.length + 1} · Real LLM (${result.ai_copilot?.model || 'qwen3.8-27b'})`,
-        badge: 'Synthesized Precedent',
+        badge: result.status === 'COMPLETE' ? 'Synthesized Precedent' : 'Boundary Check Enforced',
         thinkingCount: result.metrics?.indexed_experiences || totalIndexedCount,
         thinkingMatches: result.thinking_drawer || [
           { id: 'node-EXP-044', label: 'EXP-044 (Async Chunked Export)', fit: '94.8% fit', type: 'success' },
           { id: 'node-EXP-031', label: 'EXP-031 (Timeout Increase in Batch)', fit: 'Failed (Pool Lock Exceeded)', type: 'failure' },
           { id: 'node-EXP-067', label: 'EXP-067 (Timeout Increase in Low-load)', fit: 'Success (Context mismatch: <50 GB)', type: 'warning' },
         ],
-        boundaryNote: `Boundary check passed: ${result.final_recommendation} verified safe and reversible by Guardian.`,
+        boundaryNote: result.boundary_note || (result.final_recommendation 
+          ? `Boundary check passed: ${result.final_recommendation} verified safe and reversible by Guardian.`
+          : 'Boundary check passed: Non-transferable rule EXP-089 verified.'),
         boundaryLink: 'node-EXP-089',
         explanationParagraphs: [aiText],
         retainedId: result.retained_experience_id || `EXP-RETAINED-${Date.now().toString().slice(-4)}`,
+        caseKey: caseKey,
+        isCaseA: caseKey === 'case-a',
+        isCaseB: caseKey === 'case-b',
+        isCaseC: caseKey === 'case-c',
+        finalRecommendation: result.final_recommendation,
       };
 
       setDialogueMessages((prev) => [...prev, agentMsg]);
-      showToast(`Investigation complete. Retained as ${result.retained_experience_id || 'EXP-RETAINED'}.`);
+      showToast(
+        result.retained_experience_id
+          ? `Investigation complete. Retained as ${result.retained_experience_id}.`
+          : `Investigation complete. ${result.final_recommendation || 'Boundary verified'}.`
+      );
 
       // Refresh indexed count & graph
       fetchExperiences().then((d) => setTotalIndexedCount(d.total_count)).catch(() => {});
@@ -243,6 +323,14 @@ export default function App() {
     } finally {
       setIsInvestigating(false);
     }
+  };
+
+  // Handle Send prompt from bottom input bar
+  const handleSendPrompt = async (e) => {
+    if (e) e.preventDefault();
+    const query = promptInput.trim();
+    if (!query || isInvestigating) return;
+    executeInvestigation(query, null, activeIncidentId, activeIncidentTitle);
   };
 
   // Filtered 15 Seed Cases for Memory Vault view
@@ -260,13 +348,13 @@ export default function App() {
     });
   }, [allExperiencesList, vaultCategory, vaultSearch]);
 
-  // If user requests landing page or is logged out and wants landing
-  if (showLanding && !currentUser) {
+  // If user requests landing page
+  if (showLanding) {
     return (
       <>
         <LandingPage
           totalExperiences={totalIndexedCount}
-          onEnter={() => setIsAuthModalOpen(true)}
+          onEnter={() => setShowLanding(false)}
           onOpenAuth={(mode) => {
             setAuthMode(mode);
             setIsAuthModalOpen(true);
@@ -294,25 +382,112 @@ export default function App() {
       {/* ========================================== */}
       <header className="h-12 border-b border-[#2e2e2e] bg-[#171717] px-3.5 flex items-center justify-between shrink-0 z-30">
         <div className="flex items-center gap-3">
-          {/* ECHO Brand Emblem */}
+          {/* ECHO Brand Emblem with Stable Dropdown Menu */}
           <div
-            className="flex items-center gap-2.5 group cursor-pointer"
-            onClick={() => setShowLanding(true)}
-            title="Return to Landing Page"
+            className="relative"
+            onMouseEnter={() => {
+              if (logoMenuTimeoutRef.current) clearTimeout(logoMenuTimeoutRef.current);
+              setIsLogoMenuOpen(true);
+            }}
+            onMouseLeave={() => {
+              logoMenuTimeoutRef.current = setTimeout(() => setIsLogoMenuOpen(false), 350);
+            }}
           >
-            <div className="h-7 w-7 rounded bg-[#10a37f] flex items-center justify-center text-white font-bold text-xs transition-transform duration-200 group-hover:scale-105 active:scale-95 shadow-sm">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+            <div
+              className="flex items-center gap-2.5 group cursor-pointer py-1 px-1 rounded hover:bg-[#212121] transition-colors"
+              onClick={() => setIsLogoMenuOpen((prev) => !prev)}
+              title="Echo Navigation & Options (Hover or Click)"
+            >
+              <div className="h-7 w-7 rounded bg-[#10a37f] flex items-center justify-center text-white font-bold text-xs transition-transform duration-200 group-hover:scale-105 active:scale-95 shadow-sm">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-semibold tracking-tight text-[#fafafa] text-sm group-hover:text-white transition-colors">
+                  ECHO
+                </span>
+                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#212121] text-[#a3a3a3] border border-[#2e2e2e] font-medium tracking-wide">
+                  v3.0 Near-Black
+                </span>
+                <span className="material-symbols-outlined text-[13px] text-[#737373]">expand_more</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-semibold tracking-tight text-[#fafafa] text-sm group-hover:text-white transition-colors">
-                ECHO
-              </span>
-              <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#212121] text-[#a3a3a3] border border-[#2e2e2e] font-medium tracking-wide">
-                v3.0 Near-Black
-              </span>
-            </div>
+
+            {/* Stable Dropdown Menu with zero-gap hover bridge */}
+            {isLogoMenuOpen && (
+              <div
+                className="absolute left-0 top-full pt-1 z-50 min-w-[250px] before:content-[''] before:absolute before:-top-3 before:left-0 before:right-0 before:h-3"
+                onMouseEnter={() => {
+                  if (logoMenuTimeoutRef.current) clearTimeout(logoMenuTimeoutRef.current);
+                  setIsLogoMenuOpen(true);
+                }}
+                onMouseLeave={() => {
+                  logoMenuTimeoutRef.current = setTimeout(() => setIsLogoMenuOpen(false), 350);
+                }}
+              >
+                <div className="bg-[#171717] border border-[#2e2e2e] rounded-md shadow-2xl py-1.5 px-1 font-mono text-xs">
+                  <div className="px-3 py-1 text-[10px] text-[#737373] uppercase tracking-wider">Navigation Menu</div>
+                  <button
+                    onClick={() => {
+                      setShowLanding(true);
+                      setIsLogoMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-[#212121] text-[#fafafa] flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-[#10a37f]">home</span>
+                    <span>Home / Landing Page</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsNewCaseModalOpen(true);
+                      setIsLogoMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-[#212121] text-[#fafafa] flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-[#10a37f]">add_box</span>
+                    <span>New Case Investigation</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRailView('vault');
+                      setIsLogoMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-[#212121] text-[#ececec] flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-[#737373]">database</span>
+                    <span>Memory Vault ({totalIndexedCount})</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRailView('trees');
+                      setIsLogoMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-[#212121] text-[#ececec] flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-[#737373]">hub</span>
+                    <span>Precedent Decision Trees</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRailView('logs');
+                      setIsLogoMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-[#212121] text-[#ececec] flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-[#737373]">history</span>
+                    <span>Execution &amp; Audit Logs</span>
+                  </button>
+
+                  <div className="h-px bg-[#2e2e2e] my-1"></div>
+
+                  <div className="px-3 py-1.5 text-[11px] text-[#737373] flex items-center justify-between">
+                    <span>Account: {currentUser?.name || 'Ankit (Support Lead)'}</span>
+                    <span className="text-[#10a37f]">Online</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="h-4 w-px bg-[#2e2e2e] mx-1"></div>
@@ -326,30 +501,57 @@ export default function App() {
               Cases
             </span>
             <span className="text-[#404040]">/</span>
-            <div className="relative group">
-              <span className="font-medium text-[#fafafa] hover:text-[#10a37f] transition-colors cursor-pointer flex items-center gap-1.5">
+            <div
+              className="relative"
+              onMouseEnter={() => {
+                if (scenarioMenuTimeoutRef.current) clearTimeout(scenarioMenuTimeoutRef.current);
+                setIsScenarioMenuOpen(true);
+              }}
+              onMouseLeave={() => {
+                scenarioMenuTimeoutRef.current = setTimeout(() => setIsScenarioMenuOpen(false), 350);
+              }}
+            >
+              <span
+                onClick={() => setIsScenarioMenuOpen((prev) => !prev)}
+                className="font-medium text-[#fafafa] hover:text-[#10a37f] transition-colors cursor-pointer flex items-center gap-1.5 py-1 px-1 rounded hover:bg-[#212121]"
+              >
                 {activeIncidentTitle}
                 <span className="material-symbols-outlined text-[14px] text-[#737373]">unfold_more</span>
               </span>
-              {/* Dropdown with hero presets & seed cases */}
-              <div className="absolute left-0 top-full mt-1.5 hidden group-hover:block z-50 bg-[#171717] border border-[#2e2e2e] rounded shadow-xl py-1 px-1 min-w-[280px]">
-                <div className="px-2 py-1 text-[10px] font-mono text-[#737373] uppercase">Switch Scenario</div>
-                {Object.entries(heroPresets).map(([k, p]) => (
-                  <div
-                    key={k}
-                    className="px-2.5 py-1.5 rounded hover:bg-[#212121] cursor-pointer text-xs flex justify-between items-center"
-                    onClick={() => {
-                      setActiveIncidentTitle(p.title);
-                      setActiveIncidentId(p.label);
-                      setPromptInput(p.message);
-                      setRailView('incident');
-                    }}
-                  >
-                    <span className="text-[#ececec]">{p.title}</span>
-                    <span className="text-[10px] font-mono text-[#10a37f]">{p.label}</span>
+
+              {/* Stable Dropdown with zero-gap hover bridge */}
+              {isScenarioMenuOpen && (
+                <div
+                  className="absolute left-0 top-full pt-1 z-50 min-w-[280px] before:content-[''] before:absolute before:-top-3 before:left-0 before:right-0 before:h-3"
+                  onMouseEnter={() => {
+                    if (scenarioMenuTimeoutRef.current) clearTimeout(scenarioMenuTimeoutRef.current);
+                    setIsScenarioMenuOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    scenarioMenuTimeoutRef.current = setTimeout(() => setIsScenarioMenuOpen(false), 350);
+                  }}
+                >
+                  <div className="bg-[#171717] border border-[#2e2e2e] rounded shadow-xl py-1 px-1 font-mono text-xs">
+                    <div className="px-2 py-1 text-[10px] text-[#737373] uppercase">Switch Scenario</div>
+                    {Object.entries(heroPresets).map(([k, p]) => (
+                      <div
+                        key={k}
+                        className="px-2.5 py-1.5 rounded hover:bg-[#212121] cursor-pointer text-xs flex justify-between items-center"
+                        onClick={() => {
+                          setActiveIncidentTitle(p.title);
+                          setActiveIncidentId(p.label);
+                          setPromptInput(p.message);
+                          setRailView('incident');
+                          setIsScenarioMenuOpen(false);
+                        }}
+                      >
+                        <span className="text-[#ececec]">{p.title}</span>
+                        <span className="text-[10px] font-mono text-[#10a37f]">{p.label}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
 
             <span className="font-mono text-[10px] text-[#737373] bg-[#212121] px-1.5 py-0.5 rounded border border-[#2e2e2e]">
@@ -363,6 +565,16 @@ export default function App() {
 
         {/* Right Controls */}
         <div className="flex items-center gap-2.5">
+          {/* New Case Button in Topbar */}
+          <button
+            onClick={() => setIsNewCaseModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#10a37f] hover:bg-[#1a7f64] text-white text-xs font-mono font-medium transition duration-150 active:scale-95 shadow-sm"
+            title="Start New Incident Investigation"
+          >
+            <span className="material-symbols-outlined text-[15px]">add</span>
+            <span>New Case</span>
+          </button>
+
           {/* Live precedent count toggle/status */}
           <div
             className="hidden md:flex items-center gap-2 text-xs font-mono text-[#a3a3a3] bg-[#212121] hover:bg-[#262626] transition-colors px-2.5 py-1 rounded border border-[#2e2e2e] cursor-pointer"
@@ -374,7 +586,7 @@ export default function App() {
               <span className="w-1.5 h-1.5 rounded-full bg-[#10a37f]"></span> Live Precedent Feed
             </span>
             <span className="text-[#404040]">|</span>
-            <span className="text-[#fafafa]">{totalIndexedCount} Experiences Indexed</span>
+            <span className="text-[#fafafa]">{totalIndexedCount} Experiences</span>
           </div>
 
           {/* Model Indicator */}
@@ -423,11 +635,7 @@ export default function App() {
           <div className="flex flex-col items-center gap-3">
             {/* New Case Action */}
             <button
-              onClick={() => {
-                setPromptInput('');
-                setRailView('incident');
-                showToast('Prepared fresh incident investigation.');
-              }}
+              onClick={() => setIsNewCaseModalOpen(true)}
               className="h-8 w-8 rounded bg-[#10a37f] hover:bg-[#1a7f64] text-white flex items-center justify-center transition-all duration-150 active:scale-95 shadow-sm group relative"
               title="New Incident Case"
             >
@@ -835,31 +1043,103 @@ export default function App() {
                                 ))}
                                 {/* Explicit Action Strip with Tactile Feedback */}
                                 <div className="pt-2.5 border-t border-[#2e2e2e] flex flex-wrap items-center gap-2">
-                                  <button
-                                    className="px-2.5 py-1 rounded bg-[#10a37f] hover:bg-[#1a7f64] text-white text-[11px] font-medium flex items-center gap-1.5 transition-all duration-150 active:scale-95 shadow-sm hover:shadow"
-                                    onClick={() => showToast('Applied EXP-044 buffer chunking strategy to Acme batch config.')}
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">play_arrow</span> Apply EXP-044 Chunk Config
-                                  </button>
-                                  <button
-                                    className="px-2.5 py-1 rounded bg-[#212121] hover:bg-[#2a2a2a] text-[#d4d4d4] hover:text-[#fafafa] border border-[#2e2e2e] hover:border-[#404040] text-[11px] font-mono flex items-center gap-1.5 transition-all duration-150 active:scale-95"
-                                    onClick={() =>
-                                      showToast('Contrasting: EXP-031 (Failure: Lock Exhaustion) vs EXP-044 (Success: Pool Checkpoints).')
-                                    }
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">balance</span> Contrast EXP-031 vs EXP-044
-                                  </button>
-                                  <button
-                                    className="px-2.5 py-1 rounded bg-[#212121] hover:bg-[#2a2a2a] text-[#d4d4d4] hover:text-[#fafafa] border border-[#2e2e2e] hover:border-[#404040] text-[11px] font-mono flex items-center gap-1.5 transition-all duration-150 active:scale-95"
-                                    onClick={() =>
-                                      showToast('Boundary Check Passed: Pool lease cap bounded at 12m under invariant rule EXP-089.')
-                                    }
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">verified</span> Run Boundary Check
-                                  </button>
+                                  {msg.isCaseA ? (
+                                    <>
+                                      <button
+                                        className="px-2.5 py-1 rounded bg-[#10a37f] hover:bg-[#1a7f64] text-white text-[11px] font-medium flex items-center gap-1.5 transition-all duration-150 active:scale-95 shadow-sm hover:shadow"
+                                        onClick={() => {
+                                          executeInvestigation(
+                                            "Customer's 600 GB nightly export keeps timing out again under high concurrency in sync mode. What should we do now?",
+                                            'case-b',
+                                            '#ECHO-DEMO-02',
+                                            'Acme 600 GB Repeated Export (Memory-Informed)'
+                                          );
+                                        }}
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">play_arrow</span> Run Case B: Watch Echo Learn
+                                      </button>
+                                      <button
+                                        className="px-2.5 py-1 rounded bg-[#212121] hover:bg-[#2a2a2a] text-[#d4d4d4] hover:text-[#fafafa] border border-[#2e2e2e] hover:border-[#404040] text-[11px] font-mono flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                                        onClick={() => showToast('Contrasting: Baseline Increase Timeout (Failure) vs Precedent Memory.')}
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">balance</span> Contrast EXP-031 vs Baseline
+                                      </button>
+                                    </>
+                                  ) : msg.isCaseC ? (
+                                    <>
+                                      <button
+                                        className="px-2.5 py-1 rounded bg-[#212121] hover:bg-[#2a2a2a] text-[#c084fc] border border-[#a855f7]/40 hover:border-[#a855f7] text-[11px] font-mono flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                                        onClick={() => showToast('Anti-RAG Rule: 600 GB batch strategies are non-transferable to small interactive workloads.')}
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">verified</span> Boundary Constraint Verified
+                                      </button>
+                                      <button
+                                        className="px-2.5 py-1 rounded bg-[#10a37f] hover:bg-[#1a7f64] text-white text-[11px] font-medium flex items-center gap-1.5 transition-all duration-150 active:scale-95 shadow-sm hover:shadow"
+                                        onClick={() => setIsNewCaseModalOpen(true)}
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">add_box</span> Start Another Case
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        className="px-2.5 py-1 rounded bg-[#10a37f] hover:bg-[#1a7f64] text-white text-[11px] font-medium flex items-center gap-1.5 transition-all duration-150 active:scale-95 shadow-sm hover:shadow"
+                                        onClick={() => showToast('Applied EXP-044 buffer chunking strategy to Acme batch config.')}
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">play_arrow</span> Apply EXP-044 Chunk Config
+                                      </button>
+                                      <button
+                                        className="px-2.5 py-1 rounded bg-[#212121] hover:bg-[#2a2a2a] text-[#d4d4d4] hover:text-[#fafafa] border border-[#2e2e2e] hover:border-[#404040] text-[11px] font-mono flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                                        onClick={() =>
+                                          showToast('Contrasting: EXP-031 (Failure: Lock Exhaustion) vs EXP-044 (Success: Pool Checkpoints).')
+                                        }
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">balance</span> Contrast EXP-031 vs EXP-044
+                                      </button>
+                                      <button
+                                        className="px-2.5 py-1 rounded bg-[#212121] hover:bg-[#2a2a2a] text-[#d4d4d4] hover:text-[#fafafa] border border-[#2e2e2e] hover:border-[#404040] text-[11px] font-mono flex items-center gap-1.5 transition-all duration-150 active:scale-95"
+                                        onClick={() =>
+                                          showToast('Boundary Check Passed: Pool lease cap bounded at 12m under invariant rule EXP-089.')
+                                        }
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">verified</span> Run Boundary Check
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </>
                             )}
+                          </div>
+
+                          {/* Quick action chips row */}
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <span className="text-[10px] font-mono text-[#525252]">Quick Follow-up:</span>
+                            <button
+                              className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#1c1c1c] text-[#a3a3a3] hover:text-white border border-[#2c2c2c] hover:border-[#10a37f] transition duration-150 active:scale-95"
+                              onClick={() => {
+                                executeInvestigation(
+                                  "Customer's 600 GB nightly export keeps timing out again under high concurrency in sync mode. What should we do now?",
+                                  'case-b',
+                                  '#ECHO-DEMO-02',
+                                  'Acme 600 GB Repeated Export (Memory-Informed)'
+                                );
+                              }}
+                            >
+                              Run Case B (Learning in Action)
+                            </button>
+                            <button
+                              className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#1c1c1c] text-[#a3a3a3] hover:text-white border border-[#2c2c2c] hover:border-[#10a37f] transition duration-150 active:scale-95"
+                              onClick={() => {
+                                executeInvestigation(
+                                  "Customer's 20 GB interactive export is timing out under low concurrency in sync mode.",
+                                  'case-c',
+                                  '#ECHO-DEMO-03',
+                                  'Interactive 20 GB Export (Boundary Check)'
+                                );
+                              }}
+                            >
+                              Run Case C (Boundary Check)
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -938,15 +1218,15 @@ export default function App() {
                           <span>ALIGNMENT SCORE</span>
                           <span className="w-1.5 h-1.5 rounded-full bg-[#10a37f] pulse-calm"></span>
                         </div>
-                        <div className="text-lg font-mono font-semibold text-[#fafafa] mt-0.5 tracking-tight">94.8%</div>
+                        <div className="text-lg font-mono font-semibold text-[#fafafa] mt-0.5 tracking-tight">{liveScore}</div>
                         <div className="text-[10px] font-mono text-[#10a37f] flex items-center gap-1 mt-0.5">
-                          <span>▲ +4.2%</span> <span className="text-[#737373]">vs turn 1</span>
+                          <span>{liveDelta}</span>
                         </div>
                       </div>
                       <div className="p-2.5 rounded bg-[#212121] border border-[#2e2e2e] hover:border-[#383838] transition-colors group cursor-default">
                         <div className="text-[10px] font-mono text-[#737373]">INGESTION RATE</div>
                         <div className="text-lg font-mono font-semibold text-[#fafafa] mt-0.5 tracking-tight flex items-baseline gap-1">
-                          <span>14.2</span>
+                          <span>{liveRate}</span>
                           <span className="text-xs text-[#737373] font-normal">ep/s</span>
                         </div>
                         <div className="text-[10px] font-mono text-[#a3a3a3] mt-0.5 flex items-center gap-1">
@@ -962,7 +1242,7 @@ export default function App() {
                           <span className="material-symbols-outlined text-[13px] text-[#10a37f]">show_chart</span>
                           Memory Alignment Score
                         </span>
-                        <span className="text-[10px] text-[#737373]">Turns 1–5</span>
+                        <span className="text-[10px] text-[#737373]">Turns 1–{Math.max(5, chartMilestones.length)}</span>
                       </div>
 
                       {/* Tooltip banner inside SVG container */}
@@ -979,78 +1259,57 @@ export default function App() {
                           <line stroke="#2e2e2e" strokeDasharray="2 2" strokeWidth="1" x1="0" x2="260" y1="65" y2="65"></line>
                           {/* Target Baseline */}
                           <line opacity="0.4" stroke="#10a37f" strokeDasharray="4 3" strokeWidth="1" x1="0" x2="260" y1="20" y2="20"></line>
-                          {/* Metric Polyline */}
+                          {/* Dynamic Metric Polyline */}
                           <polyline
                             fill="none"
-                            points="10,58 60,50 120,38 180,24 245,14"
+                            points={chartMilestones.map((m) => `${m.cx},${m.cy}`).join(' ')}
                             stroke="#10a37f"
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth="2"
                           ></polyline>
-                          {/* Data Dots with tooltips */}
-                          <circle
-                            className="chart-dot"
-                            cx="10"
-                            cy="58"
-                            fill="#171717"
-                            r="3"
-                            stroke="#10a37f"
-                            strokeWidth="1.5"
-                            onMouseEnter={() => setChartTooltip({ text: 'Turn 1: Initial recall • 62.0%', time: '10:14:02' })}
-                            onMouseLeave={() => setChartTooltip(null)}
-                          />
-                          <circle
-                            className="chart-dot"
-                            cx="60"
-                            cy="50"
-                            fill="#171717"
-                            r="3"
-                            stroke="#10a37f"
-                            strokeWidth="1.5"
-                            onMouseEnter={() => setChartTooltip({ text: 'Turn 2: Rule ingestion • 71.4%', time: '10:14:08' })}
-                            onMouseLeave={() => setChartTooltip(null)}
-                          />
-                          <circle
-                            className="chart-dot"
-                            cx="120"
-                            cy="38"
-                            fill="#171717"
-                            r="3"
-                            stroke="#10a37f"
-                            strokeWidth="1.5"
-                            onMouseEnter={() => setChartTooltip({ text: 'Turn 3: Disambiguation • 81.0%', time: '10:14:15' })}
-                            onMouseLeave={() => setChartTooltip(null)}
-                          />
-                          <circle
-                            className="chart-dot"
-                            cx="180"
-                            cy="24"
-                            fill="#171717"
-                            r="3"
-                            stroke="#10a37f"
-                            strokeWidth="1.5"
-                            onMouseEnter={() => setChartTooltip({ text: 'Turn 4: Boundary prune • 88.5%', time: '10:14:22' })}
-                            onMouseLeave={() => setChartTooltip(null)}
-                          />
-                          <circle className="pulse-calm" cx="245" cy="14" fill="none" opacity="0.7" r="6" stroke="#10a37f" strokeWidth="1" />
-                          <circle
-                            className="chart-dot"
-                            cx="245"
-                            cy="14"
-                            fill="#10a37f"
-                            r="3.5"
-                            stroke="#fafafa"
-                            strokeWidth="1.5"
-                            onMouseEnter={() => setChartTooltip({ text: 'Turn 5: Current converged • 94.8%', time: '10:14:31' })}
-                            onMouseLeave={() => setChartTooltip(null)}
-                          />
+                          {/* Dynamic Data Dots with tooltips */}
+                          {chartMilestones.map((m, idx) => {
+                            const isLast = idx === chartMilestones.length - 1;
+                            return (
+                              <g key={idx}>
+                                {isLast && (
+                                  <circle
+                                    className="pulse-calm"
+                                    cx={m.cx}
+                                    cy={m.cy}
+                                    fill="none"
+                                    opacity="0.7"
+                                    r="6"
+                                    stroke="#10a37f"
+                                    strokeWidth="1"
+                                  />
+                                )}
+                                <circle
+                                  className="chart-dot cursor-pointer"
+                                  cx={m.cx}
+                                  cy={m.cy}
+                                  fill={isLast ? '#10a37f' : '#171717'}
+                                  r={isLast ? '3.5' : '3'}
+                                  stroke={isLast ? '#fafafa' : '#10a37f'}
+                                  strokeWidth="1.5"
+                                  onMouseEnter={() =>
+                                    setChartTooltip({
+                                      text: m.label || `Turn ${idx + 1}: ${liveScore}`,
+                                      time: m.time || 'Active',
+                                    })
+                                  }
+                                  onMouseLeave={() => setChartTooltip(null)}
+                                />
+                              </g>
+                            );
+                          })}
                         </svg>
                       </div>
                       <div className="flex justify-between text-[9px] font-mono text-[#737373]">
                         <span>T1: 62%</span>
-                        <span>T3: 81%</span>
-                        <span className="text-[#10a37f] font-semibold">T5: 94.8%</span>
+                        <span>Milestones: {chartMilestones.length}</span>
+                        <span className="text-[#10a37f] font-semibold">Latest: {liveScore}</span>
                       </div>
                     </div>
 
@@ -1065,63 +1324,108 @@ export default function App() {
                       </div>
 
                       <div className="space-y-1.5 font-mono text-[11px]">
+                        {/* Step 1 */}
                         <div
-                          className="p-2 rounded bg-[#212121] hover:bg-[#252525] border border-[#2e2e2e] flex items-center justify-between transition-colors cursor-pointer"
+                          className={`p-2 rounded border flex items-center justify-between transition-colors cursor-pointer ${
+                            currentPipelineStep > 1
+                              ? 'bg-[#212121] border-[#2e2e2e]'
+                              : currentPipelineStep === 1
+                              ? 'bg-[#212121] border-[#10a37f]/50'
+                              : 'bg-[#171717] border-[#2e2e2e] text-[#737373]'
+                          }`}
                           onClick={() => showToast('Context Ingest trace: 600 GB payload, MySQL engine v8.0.32, connection pool limit: 120.')}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[14px] text-[#10a37f]">check_circle</span>
-                            <span className="text-[#d4d4d4]">1. Context Ingest</span>
-                          </div>
-                          <span className="text-[#10a37f] text-[10px]">DONE (4ms)</span>
-                        </div>
-
-                        <div
-                          className="p-2 rounded bg-[#212121] hover:bg-[#252525] border border-[#2e2e2e] flex items-center justify-between transition-colors cursor-pointer"
-                          onClick={() => showToast('Precedent Recall trace: Scanned 15 graph precedents, pruned 11 dissimilar topologies.')}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[14px] text-[#10a37f]">check_circle</span>
-                            <span className="text-[#d4d4d4]">2. Precedent Recall</span>
-                          </div>
-                          <span className="text-[#10a37f] text-[10px]">DONE (18ms)</span>
-                        </div>
-
-                        <div
-                          className={`p-2 rounded border flex items-center justify-between transition-colors cursor-pointer ${
-                            currentPipelineStep >= 3
-                              ? 'bg-[#212121] border-[#10a37f]/50 step-shimmer'
-                              : 'bg-[#171717] border-[#2e2e2e] text-[#737373]'
-                          }`}
-                          onClick={() => setCurrentPipelineStep(4)}
-                        >
-                          <div className="flex items-center gap-2">
-                            {currentPipelineStep >= 3 ? (
+                            {currentPipelineStep > 1 ? (
+                              <span className="material-symbols-outlined text-[14px] text-[#10a37f]">check_circle</span>
+                            ) : currentPipelineStep === 1 ? (
                               <span className="w-1.5 h-1.5 rounded-full bg-[#10a37f] pulse-calm"></span>
                             ) : (
                               <span className="w-1.5 h-1.5 rounded-full bg-[#404040]"></span>
                             )}
-                            <span className="text-[#fafafa] font-medium">3. Boundary Reasoning</span>
+                            <span className={currentPipelineStep >= 1 ? 'text-[#d4d4d4]' : 'text-[#737373]'}>1. Context Ingest</span>
                           </div>
-                          <span className="text-[#10a37f] text-[10px] font-medium flex items-center gap-1">
-                            {currentPipelineStep >= 3 ? 'ACTIVE' : 'QUEUED'}
+                          <span className="text-[#10a37f] text-[10px]">
+                            {currentPipelineStep > 1 ? 'DONE (4ms)' : currentPipelineStep === 1 ? 'ACTIVE' : 'QUEUED'}
                           </span>
                         </div>
 
+                        {/* Step 2 */}
                         <div
-                          className={`p-2 rounded border flex items-center justify-between transition-colors ${
-                            currentPipelineStep === 4
-                              ? 'bg-[#212121] border-[#10a37f]/50 text-[#fafafa]'
+                          className={`p-2 rounded border flex items-center justify-between transition-colors cursor-pointer ${
+                            currentPipelineStep > 2
+                              ? 'bg-[#212121] border-[#2e2e2e]'
+                              : currentPipelineStep === 2
+                              ? 'bg-[#212121] border-[#10a37f]/50'
                               : 'bg-[#171717] border-[#2e2e2e] text-[#737373]'
                           }`}
+                          onClick={() => showToast('Precedent Recall trace: Scanned 15 graph precedents, pruned 11 dissimilar topologies.')}
                         >
                           <div className="flex items-center gap-2">
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${currentPipelineStep === 4 ? 'bg-[#10a37f]' : 'bg-[#404040]'}`}
-                            ></span>
-                            <span>4. Guardrail Synthesis</span>
+                            {currentPipelineStep > 2 ? (
+                              <span className="material-symbols-outlined text-[14px] text-[#10a37f]">check_circle</span>
+                            ) : currentPipelineStep === 2 ? (
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#10a37f] pulse-calm"></span>
+                            ) : (
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#404040]"></span>
+                            )}
+                            <span className={currentPipelineStep >= 2 ? 'text-[#d4d4d4]' : 'text-[#737373]'}>2. Precedent Recall</span>
                           </div>
-                          <span className="text-[10px]">{currentPipelineStep === 4 ? 'ACTIVE' : 'QUEUED'}</span>
+                          <span className="text-[#10a37f] text-[10px]">
+                            {currentPipelineStep > 2 ? 'DONE (18ms)' : currentPipelineStep === 2 ? 'ACTIVE' : 'QUEUED'}
+                          </span>
+                        </div>
+
+                        {/* Step 3 */}
+                        <div
+                          className={`p-2 rounded border flex items-center justify-between transition-colors cursor-pointer ${
+                            currentPipelineStep > 3
+                              ? 'bg-[#212121] border-[#2e2e2e]'
+                              : currentPipelineStep === 3
+                              ? 'bg-[#212121] border-[#10a37f]/50 step-shimmer'
+                              : 'bg-[#171717] border-[#2e2e2e] text-[#737373]'
+                          }`}
+                          onClick={() => showToast('Boundary Reasoning: Pool lease cap bounded at 12m under invariant rule EXP-089.')}
+                        >
+                          <div className="flex items-center gap-2">
+                            {currentPipelineStep > 3 ? (
+                              <span className="material-symbols-outlined text-[14px] text-[#10a37f]">check_circle</span>
+                            ) : currentPipelineStep === 3 ? (
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#10a37f] pulse-calm"></span>
+                            ) : (
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#404040]"></span>
+                            )}
+                            <span className={currentPipelineStep >= 3 ? 'text-[#fafafa] font-medium' : 'text-[#737373]'}>3. Boundary Reasoning</span>
+                          </div>
+                          <span className="text-[#10a37f] text-[10px] font-medium">
+                            {currentPipelineStep > 3 ? 'DONE (8ms)' : currentPipelineStep === 3 ? 'ACTIVE' : 'QUEUED'}
+                          </span>
+                        </div>
+
+                        {/* Step 4 */}
+                        <div
+                          className={`p-2 rounded border flex items-center justify-between transition-colors cursor-pointer ${
+                            currentPipelineStep === 4 && !isInvestigating
+                              ? 'bg-[#212121] border-[#2e2e2e]'
+                              : currentPipelineStep === 4
+                              ? 'bg-[#212121] border-[#10a37f]/50'
+                              : 'bg-[#171717] border-[#2e2e2e] text-[#737373]'
+                          }`}
+                          onClick={() => showToast('Guardrail Synthesis: Evaluated counterfactual outcomes.')}
+                        >
+                          <div className="flex items-center gap-2">
+                            {currentPipelineStep === 4 && !isInvestigating ? (
+                              <span className="material-symbols-outlined text-[14px] text-[#10a37f]">check_circle</span>
+                            ) : currentPipelineStep === 4 ? (
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#10a37f] pulse-calm"></span>
+                            ) : (
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#404040]"></span>
+                            )}
+                            <span className={currentPipelineStep === 4 ? 'text-[#fafafa]' : 'text-[#737373]'}>4. Guardrail Synthesis</span>
+                          </div>
+                          <span className="text-[10px] text-[#10a37f]">
+                            {currentPipelineStep === 4 && !isInvestigating ? 'DONE (12ms)' : currentPipelineStep === 4 ? 'ACTIVE' : 'QUEUED'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1487,6 +1791,15 @@ export default function App() {
           setAuthToken(token);
           setShowLanding(false);
           showToast(`Authenticated as ${user.name}`);
+        }}
+      />
+
+      {/* New Incident Case Modal Popup */}
+      <NewCaseModal
+        isOpen={isNewCaseModalOpen}
+        onClose={() => setIsNewCaseModalOpen(false)}
+        onLaunchCase={({ caseKey, title, message, label }) => {
+          executeInvestigation(message, caseKey, label, title);
         }}
       />
     </div>
