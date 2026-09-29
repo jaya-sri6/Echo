@@ -15,6 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from backend.app.api.auth import router as auth_router
+from backend.app.api.chat import router as chat_router
 from backend.app.api.routes import router
 from backend.app.api.websocket import router as websocket_router
 
@@ -34,6 +36,8 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(websocket_router)
+app.include_router(auth_router)
+app.include_router(chat_router)
 
 # Mount built frontend if available for unified single-port deployment
 frontend_dist = repo_root / "frontend" / "dist"

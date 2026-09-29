@@ -1,16 +1,106 @@
+/* Clean, non-glow custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0d0d0d;
+}
+::-webkit-scrollbar-thumb {
+  background: #2e2e2e;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #404040;
+}
+
+/* Micro-interactions & Subtle Flow Animations */
+@keyframes dashFlow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes telemetryCalmPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+}
+
+@keyframes subtleShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.signal-line-flow {
+  stroke-dasharray: 6 6;
+  animation: dashFlow 1.6s linear infinite;
+}
+
+.pulse-calm {
+  animation: telemetryCalmPulse 2.4s ease-in-out infinite;
+}
+
+.step-shimmer {
+  background: linear-gradient(90deg, rgba(16, 163, 127, 0.08) 0%, rgba(16, 163, 127, 0.22) 50%, rgba(16, 163, 127, 0.08) 100%);
+  background-size: 200% 100%;
+  animation: subtleShimmer 3s ease-in-out infinite;
+}
+
+/* SVG Line transition on node hover */
+.graph-link {
+  transition: stroke-width 0.2s ease, stroke-opacity 0.2s ease, opacity 0.2s ease;
+}
+
+.graph-link.active-highlight {
+  stroke-width: 2.75px !important;
+  stroke-opacity: 1 !important;
+}
+
+/* Chart tooltip styling */
+.chart-dot:hover {
+  transform: scale(1.4);
+  transform-origin: center;
+  cursor: pointer;
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .signal-line-flow,
+  .pulse-calm,
+  .step-shimmer {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
 :root {
   color-scheme: dark;
   --ink: #f4f1e9;
   --muted: #9b9c9b;
   --faint: #686d6e;
-  --canvas: #101314;
-  --panel: #171b1d;
-  --panel-alt: #1d2223;
-  --line: #303738;
-  --teal: #83d8c0;
-  --teal-deep: #3cae91;
-  --amber: #eac57d;
-  --red: #ef8d7d;
+  --canvas: #0d0d0d;
+  --panel: #171717;
+  --panel-alt: #212121;
+  --line: #2e2e2e;
+  --teal: #10a37f;
+  --teal-deep: #1a7f64;
+  --amber: #eab308;
+  --red: #ef4444;
   --blue: #8eb7d9;
 }
 
