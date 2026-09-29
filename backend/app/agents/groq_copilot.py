@@ -7,7 +7,8 @@ import urllib.request
 from typing import Any
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+DEFAULT_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+LARGE_MODEL = os.getenv("GROQ_LARGE_MODEL", "openai/gpt-oss-120b")
 
 
 def _get_dynamic_fallback(
@@ -146,14 +147,20 @@ Simulated Outcome: {json.dumps(simulation_outcome) if simulation_outcome else 'A
 
 Respond directly to the user's question above."""
 
+	# Determine model tier: use small gpt-oss-20b model by default for minimum cost;
+	# only route to gpt-oss-120b for heavy multi-precedent counterfactual simulations
+	m_lower = message.lower()
+	is_heavy_request = any(k in m_lower for k in ("deep counterfactual", "full simulation matrix", "benchmark all", "detailed architecture report"))
+	selected_model = LARGE_MODEL if is_heavy_request else DEFAULT_MODEL
+
 	payload = {
-		"model": DEFAULT_MODEL,
+		"model": selected_model,
 		"messages": [
 			{"role": "system", "content": system_prompt},
 			{"role": "user", "content": user_prompt},
 		],
 		"temperature": 0.25,
-		"max_tokens": 180,
+		"max_tokens": 280,
 	}
 
 	try:
@@ -173,7 +180,7 @@ Respond directly to the user's question above."""
 			if content:
 				return {
 					"source": "groq_llm",
-					"model": DEFAULT_MODEL,
+					"model": selected_model,
 					"explanation": content,
 					"status": "success",
 				}
