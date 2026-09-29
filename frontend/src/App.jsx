@@ -59,6 +59,33 @@ export default function App() {
   const [promptInput, setPromptInput] = useState('');
   const [isInvestigating, setIsInvestigating] = useState(false);
 
+  // Live Precedent Feed: Text showcase of how input is taken, agent split, and learning progression
+  const [precedentFeed, setPrecedentFeed] = useState([
+    {
+      id: 'feed-01',
+      time: '10:14:02 AM',
+      tag: 'CONTEXT INGEST',
+      badgeColor: 'text-[#10a37f] bg-[#0d3829] border-[#10a37f]/30',
+      input: "Acme's nightly 600 GB export is timing out under high concurrency...",
+      investigator: 'Workload split: 600 GB nightly batch, sync mode, 28 connections.',
+      reasoner: 'Memory scan: Recalled 3 precedents. Pruned small (<50 GB) successes as divergent.',
+      learning: 'Identified naive heuristic risk: increase_timeout causes connection lock deadlock.',
+      delta: 'Baseline alignment: 62.0%',
+    },
+    {
+      id: 'feed-02',
+      time: '10:14:31 AM',
+      tag: 'LEARNING ADAPTATION',
+      badgeColor: 'text-[#10a37f] bg-[#0d3829] border-[#10a37f]/30',
+      input: "Customer's 600 GB nightly export keeps timing out again under high concurrency...",
+      investigator: 'Pattern match: identified prior failure EXP-031 & EXP-DEMO-001.',
+      reasoner: 'Counterfactual shift: tested async_chunked_export against EXP-044.',
+      learning: 'Memory changed mind (True). Retained EXP-DEMO-002 as verified institutional success.',
+      delta: '▲ +32.8% alignment over baseline trial (94.8%)',
+    },
+  ]);
+  const [isPrecedentFeedExpanded, setIsPrecedentFeedExpanded] = useState(true);
+
   // Notification Toast
   const [toastMessage, setToastMessage] = useState(null);
 
@@ -309,6 +336,23 @@ export default function App() {
       };
 
       setDialogueMessages((prev) => [...prev, agentMsg]);
+
+      // Add entry to Live Precedent Feed showing agent task split and learning delta
+      const feedItem = {
+        id: `feed-${Date.now()}`,
+        time: new Date().toLocaleTimeString(),
+        tag: caseKey === 'case-a' ? 'BASELINE FAILURE' : caseKey === 'case-b' ? 'LEARNING LOOP' : caseKey === 'case-c' ? 'BOUNDARY INVARIANT' : 'AGENT TRIAGE',
+        badgeColor: caseKey === 'case-a' ? 'text-[#ef4444] bg-[#ef4444]/10 border-[#ef4444]/30' : caseKey === 'case-c' ? 'text-[#c084fc] bg-[#261533] border-[#a855f7]/30' : 'text-[#10a37f] bg-[#0d3829] border-[#10a37f]/30',
+        input: query.length > 75 ? query.slice(0, 75) + '...' : query,
+        investigator: `Workload split: ${result.context?.export_size_gb || 600} GB, ${result.context?.concurrency || 'high'} concurrency, ${result.context?.execution_mode || 'sync'} mode.`,
+        reasoner: `Memory scan: Recalled ${result.evidence?.length || 3} precedents. Top match: ${result.final_recommendation || 'EXP-044'}.`,
+        learning: result.retained_experience_id
+          ? `Retained experience ${result.retained_experience_id}: ${result.simulation?.outcome || 'SUCCESS'} (${result.simulation?.reason || 'Workload chunked into async buffers'}).`
+          : `Boundary invariant enforced: Non-transferable rule EXP-089 verified safe.`,
+        delta: `${result.metrics?.alignment_delta || 'Active'} • Score: ${result.metrics?.alignment_score || liveScore}`,
+      };
+      setPrecedentFeed((prev) => [feedItem, ...prev.slice(0, 7)]);
+
       showToast(
         result.retained_experience_id
           ? `Investigation complete. Retained as ${result.retained_experience_id}.`
@@ -1084,23 +1128,40 @@ export default function App() {
                                     <>
                                       <button
                                         className="px-2.5 py-1 rounded bg-[#10a37f] hover:bg-[#1a7f64] text-white text-[11px] font-medium flex items-center gap-1.5 transition-all duration-150 active:scale-95 shadow-sm hover:shadow"
-                                        onClick={() => showToast('Applied EXP-044 buffer chunking strategy to Acme batch config.')}
+                                        onClick={() => {
+                                          executeInvestigation(
+                                            "Apply EXP-044 chunk configuration: configure Acme's 600 GB nightly batch export for 50,000-row async chunked buffers with 12-minute connection pool checkpoint releases.",
+                                            'custom',
+                                            '#ECHO-APPLY-044',
+                                            'Acme 600 GB — Apply EXP-044 Chunk Config'
+                                          );
+                                        }}
                                       >
                                         <span className="material-symbols-outlined text-[14px]">play_arrow</span> Apply EXP-044 Chunk Config
                                       </button>
                                       <button
                                         className="px-2.5 py-1 rounded bg-[#212121] hover:bg-[#2a2a2a] text-[#d4d4d4] hover:text-[#fafafa] border border-[#2e2e2e] hover:border-[#404040] text-[11px] font-mono flex items-center gap-1.5 transition-all duration-150 active:scale-95"
-                                        onClick={() =>
-                                          showToast('Contrasting: EXP-031 (Failure: Lock Exhaustion) vs EXP-044 (Success: Pool Checkpoints).')
-                                        }
+                                        onClick={() => {
+                                          executeInvestigation(
+                                            "Contrast EXP-031 (monolithic timeout failure) versus EXP-044 (async chunked export success) for Acme's 600 GB high-concurrency batch export. What was learned?",
+                                            'custom',
+                                            '#ECHO-CONTRAST',
+                                            'Decision Contrast: EXP-031 vs EXP-044'
+                                          );
+                                        }}
                                       >
                                         <span className="material-symbols-outlined text-[14px]">balance</span> Contrast EXP-031 vs EXP-044
                                       </button>
                                       <button
                                         className="px-2.5 py-1 rounded bg-[#212121] hover:bg-[#2a2a2a] text-[#d4d4d4] hover:text-[#fafafa] border border-[#2e2e2e] hover:border-[#404040] text-[11px] font-mono flex items-center gap-1.5 transition-all duration-150 active:scale-95"
-                                        onClick={() =>
-                                          showToast('Boundary Check Passed: Pool lease cap bounded at 12m under invariant rule EXP-089.')
-                                        }
+                                        onClick={() => {
+                                          executeInvestigation(
+                                            "Run boundary validation check: verify whether Acme's 600 GB batch export strategy violates connection pool lease limits or applies to low-concurrency interactive workloads.",
+                                            'case-c',
+                                            '#ECHO-BOUNDARY',
+                                            'Invariant Boundary Check: EXP-089'
+                                          );
+                                        }}
                                       >
                                         <span className="material-symbols-outlined text-[14px]">verified</span> Run Boundary Check
                                       </button>
@@ -1430,22 +1491,76 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Precedent Repository Status Pill */}
-                    <div className="p-2.5 rounded bg-[#121212] border border-[#2e2e2e] flex items-center justify-between text-[11px] font-mono hover:border-[#383838] transition-colors">
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#10a37f]"></span>
-                        <span className="text-[#737373]">Live Precedent Feed</span>
+                    {/* LIVE PRECEDENT FEED: Text showcase of how input is taken, agent split, and learning progression */}
+                    <div className="rounded bg-[#141414] border border-[#2e2e2e] p-2.5 space-y-2 font-mono text-xs">
+                      <div className="flex items-center justify-between border-b border-[#262626] pb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-[#10a37f] pulse-calm"></span>
+                          <span className="text-[11px] font-semibold text-[#fafafa] uppercase tracking-wide">
+                            Live Precedent Feed
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-[#10a37f] bg-[#0d3829] px-1.5 py-0.5 rounded border border-[#10a37f]/30">
+                            {totalIndexedCount} Ingested
+                          </span>
+                          <button
+                            className="text-[#737373] hover:text-[#fafafa] transition p-0.5"
+                            onClick={() => {
+                              fetchExperiences().then((d) => setTotalIndexedCount(d.total_count));
+                              showToast('Synchronized with live Hindsight memory bank.');
+                            }}
+                            title="Refresh feed"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">refresh</span>
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        className="text-[#a3a3a3] hover:text-[#fafafa] transition-colors text-[10px] flex items-center gap-1"
-                        onClick={() => {
-                          fetchExperiences().then((d) => setTotalIndexedCount(d.total_count));
-                          showToast('Synchronized with live Hindsight memory bank.');
-                        }}
-                      >
-                        <span className="material-symbols-outlined text-[12px]">refresh</span>
-                        <span>Synced just now</span>
-                      </button>
+
+                      {/* Feed Entries: Showcase how each input is worked upon */}
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-0.5 text-[10px]">
+                        {precedentFeed.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="p-2 rounded bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between text-[9px]">
+                              <span className={`px-1.5 py-0.5 rounded border font-semibold ${entry.badgeColor}`}>
+                                {entry.tag}
+                              </span>
+                              <span className="text-[#525252]">{entry.time}</span>
+                            </div>
+
+                            {/* Input taken from our side */}
+                            <div className="text-[#a3a3a3] leading-relaxed">
+                              <span className="text-[#737373]">Input: </span>
+                              <span className="text-[#ececec] italic">"{entry.input}"</span>
+                            </div>
+
+                            {/* Agent task split */}
+                            <div className="space-y-0.5 pt-0.5 border-t border-[#262626] text-[9.5px]">
+                              <div className="text-[#a3a3a3] flex items-start gap-1">
+                                <span className="text-[#10a37f] shrink-0 font-medium">↳ Ingest:</span>
+                                <span>{entry.investigator}</span>
+                              </div>
+                              <div className="text-[#a3a3a3] flex items-start gap-1">
+                                <span className="text-[#10a37f] shrink-0 font-medium">↳ Reasoner:</span>
+                                <span>{entry.reasoner}</span>
+                              </div>
+                              <div className="text-[#d4d4d4] flex items-start gap-1">
+                                <span className="text-[#38bdf8] shrink-0 font-medium">↳ Learning:</span>
+                                <span>{entry.learning}</span>
+                              </div>
+                            </div>
+
+                            {/* Delta improvement */}
+                            <div className="text-[9px] text-[#10a37f] pt-0.5 flex items-center justify-between font-medium">
+                              <span>Delta: {entry.delta}</span>
+                              <span className="text-[#525252]">Active</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </aside>
