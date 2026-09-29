@@ -150,6 +150,41 @@ export default function App() {
     { text: '  [>] RETAINED EXPERIENCE: Saved EXP-DEMO-002 (Status: SUCCESS) into organizational memory', type: 'green', bold: true },
   ]);
 
+  // Real-Time Audit Log History
+  const [logTab, setLogTab] = useState('audit'); // 'audit' | 'terminal'
+  const [auditLogs, setAuditLogs] = useState([
+    {
+      id: 'AUD-001',
+      time: '10:14:02 AM',
+      event: 'CASE_INGEST',
+      query: '600 GB batch export timeout under high load',
+      actor: 'Ankit (Support Lead)',
+      agent: 'Incident Investigator',
+      status: 'FAILURE_RECORDED',
+      retained: 'EXP-031',
+    },
+    {
+      id: 'AUD-002',
+      time: '10:14:15 AM',
+      event: 'HINDSIGHT_RECALL',
+      query: 'Query high-concurrency batch precedents',
+      actor: 'System Autonomous',
+      agent: 'Hindsight Memory Core',
+      status: 'PRECEDENT_MATCHED',
+      retained: 'EXP-044',
+    },
+    {
+      id: 'AUD-003',
+      time: '10:14:31 AM',
+      event: 'GUARDIAN_CLEARANCE',
+      query: 'Validate async chunked buffers (<12m)',
+      actor: 'Guardian Gate',
+      agent: 'Simulator Engine',
+      status: 'VERIFIED_SAFE',
+      retained: 'EXP-089',
+    },
+  ]);
+
   // 15 Seed Cases Vault Filters
   const [vaultCategory, setVaultCategory] = useState('ALL');
   const [vaultSearch, setVaultSearch] = useState('');
@@ -289,6 +324,19 @@ export default function App() {
       if (result.terminal_trace && result.terminal_trace.length > 0) {
         setTerminalLogs((prev) => [...prev, ...result.terminal_trace]);
       }
+
+      // Real-time update to Audit Log
+      const newAuditEntry = {
+        id: `AUD-${Date.now().toString().slice(-4)}`,
+        time: new Date().toLocaleTimeString(),
+        event: result.final_recommendation ? 'INTERVENTION_SYNTHESIS' : 'MEMORY_COPILOT_INQUIRY',
+        query: query.slice(0, 48) + (query.length > 48 ? '...' : ''),
+        actor: currentUser?.name || 'Ankit (Support Lead)',
+        agent: `Echo Copilot (${result.ai_copilot?.model || 'qwen3.8-27b'})`,
+        status: result.status === 'COMPLETE' ? 'RESOLUTION_VERIFIED' : 'COPILOT_ANSWERED',
+        retained: result.retained_experience_id || 'RECALLED_ONLY',
+      };
+      setAuditLogs((prev) => [newAuditEntry, ...prev]);
 
       // Update metrics
       if (result.metrics) {
@@ -667,17 +715,6 @@ export default function App() {
             <span className="text-[#fafafa]">{totalIndexedCount} Experiences</span>
           </div>
 
-          {/* Model Indicator */}
-          <button
-            className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#212121] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#404040] text-xs text-[#ececec] transition duration-150 active:scale-95"
-            onClick={() => showToast('Runtime: Groq Qwen 3.8 / LLaMA-3 + Deterministic Echo Rule Engine')}
-            title="LLM Backend Runtime"
-          >
-            <span className="w-2 h-2 rounded-full bg-[#10a37f]"></span>
-            <span className="font-mono text-[11px]">gpt-4o-echo</span>
-            <span className="material-symbols-outlined text-[13px] text-[#737373]">expand_more</span>
-          </button>
-
           {/* User avatar & Logout popup with zero-gap hover bridge & click latch */}
           <div
             className="relative"
@@ -1019,15 +1056,34 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW C: TERMINAL EXECUTION LOGS */}
+          {/* VIEW C: AUDIT LOGS & TERMINAL STREAM */}
           {railView === 'logs' && (
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <div className="flex items-center justify-between border-b border-[#2e2e2e] pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444]"></span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#eab308]"></span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#10a37f]"></span>
-                  <span className="text-xs font-mono text-[#a3a3a3] ml-2">echo@terminal ~ zsh (Process: 3751)</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444]"></span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#eab308]"></span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#10a37f]"></span>
+                  </div>
+                  <div className="flex items-center gap-1 bg-[#171717] p-1 rounded border border-[#2e2e2e] text-xs font-mono">
+                    <button
+                      onClick={() => setLogTab('audit')}
+                      className={`px-3 py-1 rounded transition ${
+                        logTab === 'audit' ? 'bg-[#212121] text-[#fafafa] font-semibold' : 'text-[#737373] hover:text-[#ececec]'
+                      }`}
+                    >
+                      Audit Trail ({auditLogs.length})
+                    </button>
+                    <button
+                      onClick={() => setLogTab('terminal')}
+                      className={`px-3 py-1 rounded transition ${
+                        logTab === 'terminal' ? 'bg-[#212121] text-[#fafafa] font-semibold' : 'text-[#737373] hover:text-[#ececec]'
+                      }`}
+                    >
+                      Terminal Stream (Process 3751)
+                    </button>
+                  </div>
                 </div>
                 <button
                   onClick={() => setRailView('incident')}
@@ -1037,26 +1093,62 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="rounded bg-[#0d0d0d] border border-[#2e2e2e] p-4 font-mono text-xs space-y-1 overflow-x-auto min-h-[350px]">
-                {terminalLogs.map((log, i) => (
-                  <div
-                    key={i}
-                    className={`${
-                      log.type === 'green'
-                        ? 'text-[#10a37f]'
-                        : log.type === 'yellow'
-                        ? 'text-[#eab308]'
-                        : log.type === 'cyan'
-                        ? 'text-[#8eb7d9]'
-                        : log.type === 'dim'
-                        ? 'text-[#525252]'
-                        : 'text-[#ececec]'
-                    } ${log.bold ? 'font-bold' : ''}`}
-                  >
-                    {log.text}
+              {logTab === 'audit' ? (
+                <div className="rounded bg-[#171717] border border-[#2e2e2e] overflow-hidden">
+                  <div className="grid grid-cols-12 text-xs font-mono border-b border-[#2e2e2e] bg-[#1a1a1a] p-3 text-[#a3a3a3] font-semibold uppercase">
+                    <div className="col-span-2">Time / ID</div>
+                    <div className="col-span-4">Inquiry / Action</div>
+                    <div className="col-span-2">Actor</div>
+                    <div className="col-span-2">Agent / Model</div>
+                    <div className="col-span-2 text-right">Status / Retained</div>
                   </div>
-                ))}
-              </div>
+                  <div className="divide-y divide-[#242424] text-xs font-mono">
+                    {auditLogs.map((entry) => (
+                      <div key={entry.id} className="grid grid-cols-12 p-3 hover:bg-[#1f1f1f] transition items-center">
+                        <div className="col-span-2">
+                          <div className="text-[#fafafa] font-semibold text-[11px]">{entry.id}</div>
+                          <div className="text-[10px] text-[#737373]">{entry.time}</div>
+                        </div>
+                        <div className="col-span-4 pr-3 text-[#ececec] text-[11px]">
+                          {entry.query}
+                        </div>
+                        <div className="col-span-2 text-[#a3a3a3] text-[11px]">
+                          {entry.actor}
+                        </div>
+                        <div className="col-span-2 text-[#10a37f] text-[11px] truncate">
+                          {entry.agent}
+                        </div>
+                        <div className="col-span-2 text-right">
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-[#212121] border border-[#2e2e2e] text-[#a3a3a3]">
+                            {entry.retained}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded bg-[#0d0d0d] border border-[#2e2e2e] p-4 font-mono text-xs space-y-1 overflow-x-auto min-h-[350px]">
+                  {terminalLogs.map((log, i) => (
+                    <div
+                      key={i}
+                      className={`${
+                        log.type === 'green'
+                          ? 'text-[#10a37f]'
+                          : log.type === 'yellow'
+                          ? 'text-[#eab308]'
+                          : log.type === 'cyan'
+                          ? 'text-[#8eb7d9]'
+                          : log.type === 'dim'
+                          ? 'text-[#525252]'
+                          : 'text-[#ececec]'
+                      } ${log.bold ? 'font-bold' : ''}`}
+                    >
+                      {log.text}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1829,29 +1921,29 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* CENTER CORE: Current Incident */}
+                    {/* CENTER CORE: Hindsight Memory Core */}
                     <div
                       id="node-center"
-                      className="graph-node w-64 p-3.5 rounded bg-[#171717] border-2 border-[#10a37f] hover:border-emerald-400 text-center shadow-lg select-none transition-all duration-200 cursor-pointer"
+                      className="graph-node w-72 p-3.5 rounded bg-[#171717] border-2 border-[#10a37f] hover:border-emerald-400 text-center shadow-2xl select-none transition-all duration-200 cursor-pointer"
                       onClick={() =>
                         setInspectModalNode({
-                          tag: 'Acme 600 GB Export',
-                          title: 'Active Incident Context',
-                          badge: 'Status: Active Synthesis',
-                          desc: 'Running real-time precedent correlation across active database clusters. 4 matching experiences verified.',
+                          tag: 'HINDSIGHT-CORE',
+                          title: 'Hindsight Experience Memory Engine',
+                          badge: 'Central Experience Arbiter',
+                          desc: 'Central memory engine mediating live incident telemetry against institutional precedents (EXP-031, EXP-044, EXP-067, EXP-089).',
                         })
                       }
                     >
-                      <div className="flex items-center justify-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[#10a37f] font-semibold">
-                        <span className="w-2 h-2 rounded-full bg-[#10a37f] pulse-calm"></span>
-                        Current Active Case
+                      <div className="flex items-center justify-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[#10a37f] font-bold">
+                        <span className="w-2 h-2 rounded-full bg-[#10a37f] animate-pulse"></span>
+                        HINDSIGHT MEMORY CORE
                       </div>
                       <div className="text-sm font-semibold text-[#fafafa] mt-1">{activeIncidentTitle}</div>
-                      <div className="text-[11px] font-mono text-[#a3a3a3] mt-0.5">High DB Pool Contention</div>
+                      <div className="text-[10px] font-mono text-[#10a37f] mt-0.5">Central Experience Arbiter</div>
                       <div className="my-2 h-px bg-[#2e2e2e]"></div>
                       <div className="flex items-center justify-between text-[10px] font-mono text-[#737373]">
-                        <span>Correlated: 4 precedents</span>
-                        <span className="text-[#10a37f] font-medium">Match: EXP-044</span>
+                        <span>{totalIndexedCount} Precedents</span>
+                        <span className="text-[#10a37f] font-medium">Real-Time Sync</span>
                       </div>
                     </div>
 

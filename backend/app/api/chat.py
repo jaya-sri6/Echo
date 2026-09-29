@@ -71,10 +71,10 @@ def get_experience_graph(active_id: str | None = None) -> dict[str, Any]:
 	nodes = [
 		{
 			"id": "node-center",
-			"tag": "ACTIVE-INCIDENT",
-			"title": "Acme 600 GB Export",
+			"tag": "HINDSIGHT-CORE",
+			"title": "Hindsight Memory Core",
 			"category": "center",
-			"desc": "Active Incident Context: High DB Pool Contention (600 GB, High Concurrency, Sync Mode)",
+			"desc": "Central Experience Arbiter: Mediating incoming queries against organizational memory precedents.",
 			"badge": "Active Synthesis",
 			"weight": 1.0,
 		},
@@ -141,7 +141,7 @@ def get_experience_graph(active_id: str | None = None) -> dict[str, Any]:
 	]
 
 	return {
-		"active_node": "Acme (600 GB Batch)",
+		"active_node": "Hindsight Memory Core",
 		"nodes": nodes,
 		"links": links,
 		"indexed_count": all_exp["total_count"],
@@ -391,7 +391,7 @@ def handle_chat_investigation(
 		ingest_rate = "15.0 ep/s"
 
 	else:
-		# Custom incident prompt
+		# Custom incident prompt or open question
 		result = EchoPipeline.run(message, retain_outcome=True)
 		context_dict = result.case_context.model_dump() if result.case_context else {}
 		evidence_list = [{"evidence": ev} for ev in result.decision_evidence]
@@ -401,7 +401,7 @@ def handle_chat_investigation(
 			message=message,
 			context=context_dict,
 			evidence_records=evidence_list,
-			recommended_action=result.final_recommendation or "async_chunked_export",
+			recommended_action=result.final_recommendation,
 			simulation_outcome=sim_dict,
 		)
 		retained_id = result.retained_experience_id
@@ -434,17 +434,25 @@ def handle_chat_investigation(
 
 		terminal_trace = [
 			{"text": "======================================================================", "type": "dim"},
-			{"text": f"  INCIDENT INVESTIGATION: {investigation_id}", "type": "cyan", "bold": True},
+			{"text": f"  INTERACTION / INVESTIGATION: {investigation_id}", "type": "cyan", "bold": True},
 			{"text": "======================================================================", "type": "dim"},
-			{"text": f'  Customer Message: "{message}"', "type": "normal"},
-			{"text": f"  [>] PIPELINE STATUS: {result.status}", "type": "green" if result.status == "COMPLETE" else "yellow"},
-			{"text": f"  [>] FINAL RECOMMENDATION: {final_rec or 'None (Boundary detected)'}", "type": "green"},
-			{"text": f"  [>] SIMULATED OUTCOME: {sim_dict.get('outcome', 'SUCCESS') if sim_dict else 'ANALYZED'}", "type": "cyan"},
+			{"text": f'  User Query: "{message}"', "type": "normal"},
+			{"text": f"  [>] PIPELINE STATUS: {result.status}", "type": "green" if result.status == "COMPLETE" else "cyan"},
+			{"text": f"  [>] REASONER AGENT: Groq LLM ({groq_result.get('model', 'qwen3.8-27b')})", "type": "green"},
+			{"text": f"  [>] RECALLED PRECEDENTS: {len(evidence_list)} organizational memories consulted", "type": "yellow"},
 		]
+		if final_rec:
+			terminal_trace.append({"text": f"  [>] FINAL RECOMMENDATION: {final_rec}", "type": "green"})
+		if sim_dict:
+			terminal_trace.append({"text": f"  [>] SIMULATED OUTCOME: {sim_dict.get('outcome', 'ANALYZED')}", "type": "cyan"})
 		if retained_id:
 			terminal_trace.append({"text": f"  [>] RETAINED EXPERIENCE: Saved {retained_id} into organizational memory", "type": "green"})
 
-		boundary_note = f"Boundary check passed: {final_rec or 'Action'} verified safe and reversible by Guardian."
+		if final_rec:
+			boundary_note = f"Boundary check passed: {final_rec} verified safe and reversible by Guardian."
+		else:
+			boundary_note = f"Operational memory inquiry processed: {len(evidence_list)} precedents evaluated by Groq ({groq_result.get('model', 'qwen3.8-27b')})."
+
 		align_score = "95.4%"
 		align_delta = "▲ +1.2% live adaptation"
 		ingest_rate = "17.2 ep/s"
