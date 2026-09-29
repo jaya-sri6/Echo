@@ -33,8 +33,10 @@ export default function App() {
   // Top Bar Dropdowns with stable hover & click
   const [isLogoMenuOpen, setIsLogoMenuOpen] = useState(false);
   const [isScenarioMenuOpen, setIsScenarioMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const logoMenuTimeoutRef = useRef(null);
   const scenarioMenuTimeoutRef = useRef(null);
+  const userMenuTimeoutRef = useRef(null);
 
   // Active View Tab from Navigation Rail: 'incident' | 'vault' | 'trees' | 'logs' | 'settings'
   const [railView, setRailView] = useState('incident');
@@ -400,6 +402,15 @@ export default function App() {
       <>
         <LandingPage
           totalExperiences={totalIndexedCount}
+          currentUser={currentUser}
+          isLoggedIn={Boolean(currentUser && authToken)}
+          onSignOut={() => {
+            localStorage.removeItem('echo_token');
+            localStorage.removeItem('echo_user');
+            setCurrentUser(null);
+            setAuthToken(null);
+            showToast('Signed out successfully');
+          }}
           onEnter={() => {
             if (currentUser && authToken) {
               setShowLanding(false);
@@ -411,6 +422,20 @@ export default function App() {
           onOpenAuth={(mode) => {
             setAuthMode(mode);
             setIsAuthModalOpen(true);
+          }}
+          onSelectScenario={(scenario) => {
+            if (scenario) {
+              setActiveIncidentTitle(scenario.title);
+              setActiveIncidentId(scenario.label);
+              setPromptInput(scenario.message);
+              setRailView('incident');
+            }
+            if (currentUser && authToken) {
+              setShowLanding(false);
+            } else {
+              setAuthMode('login');
+              setIsAuthModalOpen(true);
+            }
           }}
         />
         <AuthModal
@@ -653,28 +678,81 @@ export default function App() {
             <span className="material-symbols-outlined text-[13px] text-[#737373]">expand_more</span>
           </button>
 
-          {/* User avatar & Logout popup */}
-          <div className="relative group cursor-pointer">
-            <div className="h-7 w-7 rounded bg-[#2e2e2e] hover:bg-[#383838] text-[#fafafa] flex items-center justify-center font-mono text-xs font-semibold border border-[#404040] transition duration-150 active:scale-95">
-              {currentUser?.name ? currentUser.name.charAt(0) : 'A'}
-            </div>
-            <div className="absolute right-0 top-full mt-1.5 hidden group-hover:block z-50 bg-[#171717] border border-[#2e2e2e] rounded shadow-lg py-1 px-2.5 text-[11px] font-mono text-[#a3a3a3] whitespace-nowrap">
-              <div className="font-semibold text-[#fafafa] pb-1 border-b border-[#2e2e2e] mb-1">
-                {currentUser?.name || 'Ankit (Support Lead)'}
-              </div>
-              <button
-                onClick={() => {
-                  localStorage.removeItem('echo_token');
-                  localStorage.removeItem('echo_user');
-                  setCurrentUser(null);
-                  setAuthToken(null);
-                  setShowLanding(true);
+          {/* User avatar & Logout popup with zero-gap hover bridge & click latch */}
+          <div
+            className="relative"
+            onMouseEnter={() => {
+              if (userMenuTimeoutRef.current) clearTimeout(userMenuTimeoutRef.current);
+              setIsUserMenuOpen(true);
+            }}
+            onMouseLeave={() => {
+              userMenuTimeoutRef.current = setTimeout(() => setIsUserMenuOpen(false), 350);
+            }}
+          >
+            <button
+              onClick={() => setIsUserMenuOpen((prev) => !prev)}
+              className="h-7 w-7 rounded bg-[#2e2e2e] hover:bg-[#383838] text-[#fafafa] flex items-center justify-center font-mono text-xs font-semibold border border-[#404040] transition duration-150 active:scale-95 cursor-pointer"
+              title="User Account & Session"
+            >
+              {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'A'}
+            </button>
+
+            {isUserMenuOpen && (
+              <div
+                className="absolute right-0 top-full pt-1.5 z-50 min-w-[210px] before:content-[''] before:absolute before:-top-3 before:left-0 before:right-0 before:h-3"
+                onMouseEnter={() => {
+                  if (userMenuTimeoutRef.current) clearTimeout(userMenuTimeoutRef.current);
+                  setIsUserMenuOpen(true);
                 }}
-                className="text-[#ef4444] hover:underline"
+                onMouseLeave={() => {
+                  userMenuTimeoutRef.current = setTimeout(() => setIsUserMenuOpen(false), 350);
+                }}
               >
-                Sign Out
-              </button>
-            </div>
+                <div className="bg-[#171717] border border-[#2e2e2e] rounded-md shadow-2xl p-2.5 text-xs font-mono">
+                  <div className="flex items-center gap-2 pb-2 border-b border-[#2e2e2e] mb-2">
+                    <div className="h-6 w-6 rounded bg-[#10a37f] text-white flex items-center justify-center font-bold text-xs">
+                      {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'A'}
+                    </div>
+                    <div className="overflow-hidden">
+                      <div className="font-semibold text-[#fafafa] truncate">
+                        {currentUser?.name || 'Ankit (Support Lead)'}
+                      </div>
+                      <div className="text-[10px] text-[#737373] truncate">
+                        {currentUser?.email || 'ankit@echo.ai'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => {
+                        setShowLanding(true);
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left py-1.5 px-2 rounded hover:bg-[#212121] text-[#ececec] flex items-center gap-2 transition cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[15px] text-[#10a37f]">home</span>
+                      <span>Home / Landing Page</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        localStorage.removeItem('echo_token');
+                        localStorage.removeItem('echo_user');
+                        setCurrentUser(null);
+                        setAuthToken(null);
+                        setIsUserMenuOpen(false);
+                        setShowLanding(true);
+                        showToast('Signed out successfully');
+                      }}
+                      className="w-full text-left py-1.5 px-2 rounded hover:bg-[#2a1215] text-[#ef4444] flex items-center gap-2 transition cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[15px] text-[#ef4444]">logout</span>
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
