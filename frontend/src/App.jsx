@@ -13,12 +13,19 @@ import {
 } from './services/api';
 
 export default function App() {
-  // Navigation & Authentication
-  const [currentUser, setCurrentUser] = useState(null);
-  const [authToken, setAuthToken] = useState(null);
+  // Navigation & Authentication: Persisted across refreshes and sessions
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const u = localStorage.getItem('echo_user');
+      return u ? JSON.parse(u) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('echo_token'));
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login');
-  const [showLanding, setShowLanding] = useState(false);
+  const [showLanding, setShowLanding] = useState(() => !localStorage.getItem('echo_token'));
 
   // New Case Modal Popup
   const [isNewCaseModalOpen, setIsNewCaseModalOpen] = useState(false);
@@ -147,26 +154,21 @@ export default function App() {
 
   const chatBottomRef = useRef(null);
 
-  // Check initial authentication from localStorage
+  // Check initial authentication from localStorage and validate with backend
   useEffect(() => {
     const savedToken = localStorage.getItem('echo_token');
-    const savedUser = localStorage.getItem('echo_user');
     if (savedToken) {
-      setAuthToken(savedToken);
-      if (savedUser) {
-        try {
-          setCurrentUser(JSON.parse(savedUser));
-        } catch {
-          // ignore
-        }
-      }
       authMe(savedToken)
-        .then((user) => setCurrentUser(user))
+        .then((user) => {
+          setCurrentUser(user);
+          localStorage.setItem('echo_user', JSON.stringify(user));
+        })
         .catch(() => {
           localStorage.removeItem('echo_token');
           localStorage.removeItem('echo_user');
           setAuthToken(null);
           setCurrentUser(null);
+          setShowLanding(true);
         });
     } else {
       setShowLanding(true);
@@ -392,13 +394,20 @@ export default function App() {
     });
   }, [allExperiencesList, vaultCategory, vaultSearch]);
 
-  // If user requests landing page
-  if (showLanding) {
+  // If user requests landing page or is not authenticated (must log in to enter Echo)
+  if (showLanding || (!currentUser && !authToken)) {
     return (
       <>
         <LandingPage
           totalExperiences={totalIndexedCount}
-          onEnter={() => setShowLanding(false)}
+          onEnter={() => {
+            if (currentUser && authToken) {
+              setShowLanding(false);
+            } else {
+              setAuthMode('login');
+              setIsAuthModalOpen(true);
+            }
+          }}
           onOpenAuth={(mode) => {
             setAuthMode(mode);
             setIsAuthModalOpen(true);
