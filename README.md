@@ -10,7 +10,7 @@
   </pre>
   <h3 align="center">ECHO — Organizational Experience Memory Engine</h3>
   <p align="center">
-    <strong>AI can reason from knowledge. Echo lets it reason from what your company experienced.</strong>
+    <strong>"Echo doesn't remember what customers said. It remembers what the company learned."</strong>
   </p>
   <p align="center">
     <img src="https://img.shields.io/badge/Tests-78%20Passed-10a37f?style=flat-square" alt="Tests" />
@@ -24,20 +24,48 @@
 
 ---
 
-## 📌 Executive Summary
+## 📌 1. The Core Philosophy
 
-Enterprise incident triage suffers from **institutional amnesia**. When production outages occur at 3 AM:
-1. **Critical Wisdom Evaporates**: Postmortems and incident workarounds rot in Slack threads, Jira tickets, and Google Docs.
-2. **The Flaw of Standard RAG**: Vector search matches text keywords (*"timeout"*), completely blind to operational consequences. A standard copilot will recommend increasing query timeouts—unaware that doing so crashed the database connection pool last quarter.
-3. **Scale Divergence**: Fixes that succeed at 20 GB often catastrophically fail on 600 GB batch pipelines.
+When critical outages strike B2B SaaS infrastructure at 3 AM:
+1. **Critical Institutional Wisdom Evaporates**: Postmortems, mitigation hacks, and workaround recipes rot in Slack threads, Jira tickets, and Google Docs.
+2. **The Fatal Flaw of Standard RAG**: Vector databases match text keywords (*"timeout"*), completely blind to operational consequences. A standard LLM will recommend increasing query timeouts—unaware that doing so crashed the shared database pool last month.
+3. **Scale Divergence**: Heuristics that succeed at 20 GB catastrophically fail at 600 GB batch pipelines, causing cascading connection pool exhaustion.
 
 **Echo resolves this by placing the Hindsight Memory Layer at the center of multi-agent triage.** Instead of repeating past mistakes, Echo recalls previous failures, validates contextual applicability boundaries, enforces hard organizational invariants, and autonomously retains every verified outcome back into organizational memory.
 
 ---
 
-## 🤖 Multi-Agent Architecture (The 6 Specialized Agents)
+## 🎯 2. The Three-Case Proof (Core Verification Benchmark)
 
-Echo orchestrates **6 specialized autonomous agents** collaborating across a deterministic 12-event lifecycle:
+Echo is designed and verified against the **Three-Case Proof of Organizational Learning**:
+
+```text
+               CASE A: First Experience (Baseline Trial)
+               600 GB Payload • High Concurrency • Nightly Batch Sync
+               Initial Decision : Increase Timeout
+               Outcome          : FAILURE (Connection Pool Saturation)
+               Learning Loop    : Retained as Negative Precedent (EXP-031 / EXP-DEMO-001)
+                                      ↓
+               CASE B: Repeated Problem (Memory-Informed Decision)
+               600 GB Payload • High Concurrency • Nightly Batch Sync
+               Echo Action      : Hindsight recalls EXP-031 failure
+               Decision Shift   : Increase Timeout → Async Chunked Export (EXP-044)
+               Outcome          : SUCCESS (110m completion, 0 escalation)
+               Learning Loop    : Retained as Positive Precedent (EXP-DEMO-002)
+                                      ↓
+               CASE C: Transfer Boundary Check (Anti-RAG Protection)
+               20 GB Payload • Low Concurrency • Interactive Sync
+               Echo Action      : Discovers 600 GB batch precedents
+               Boundary Reason  : Workload volume (<50 GB) & mode diverge
+               Decision Shift   : REJECT BLIND TRANSFER (EXP-067 / EXP-089)
+               Outcome          : Avoids unnecessary async refactoring
+```
+
+---
+
+## 🤖 3. Multi-Agent Architecture (The 6 Specialized Agents)
+
+Echo orchestrates **6 specialized autonomous agents** collaborating across the deterministic 12-event lifecycle:
 
 ```text
                ┌────────────────────────────────────────────────────────┐
@@ -72,7 +100,7 @@ Echo orchestrates **6 specialized autonomous agents** collaborating across a det
                                            │
                                            ▼
                              [ 7. Memory Retention Agent ]
-                                              (Records outcome into Hindsight bank N+1)
+                                           │  (Records outcome into Hindsight bank N+1)
 ```
 
 ### The 6 Agent Roles
@@ -88,9 +116,52 @@ Echo orchestrates **6 specialized autonomous agents** collaborating across a det
 
 ---
 
-## ⚡ Tiered LLM Strategy & Cost Optimization
+## 🏛️ 4. Master Extensions & Advanced Capabilities
 
-Echo utilizes an intelligent **tiered model routing architecture** to deliver high-quality reasoning while keeping operational inference costs at minimum:
+Echo implements the full suite of **S-Tier** and **A-Tier** capabilities specified in `ECHO_EXTENSIONS_MASTER_INTEGRATION.md`:
+
+### S-Tier Capabilities (Strategic Experience Systems)
+
+#### `S1` — Interactive Memory Explorer & Precedent Vault
+- **Visual Precedent Browser**: Inspect all verified organizational precedents with state vectors (`export_size_gb`, `concurrency`, `workload`).
+- **Negative & Positive Categorization**: Clearly isolates failure precedents (`EXP-031 Contraindicated Lock`), success resolutions (`EXP-044 Async Chunking`), scale guards (`EXP-067`), and invariants (`EXP-089`).
+- **Interactive Graph Dock**: A real-time bezier connection matrix connecting active incident contexts directly through the central Hindsight Memory Core.
+
+#### `S2` — Decision Replay (Memory OFF vs. ON)
+- **Counterfactual Side-by-Side Replay**: Demonstrates what an automated agent would do with **Memory OFF** (blind heuristic: increase timeout &rarr; pool crash) vs. **Memory ON** (recalled EXP-031 &rarr; switches to EXP-044 async buffers).
+- **Audit Verification**: Proves learning curve acceleration and risk reduction across consecutive turns.
+
+#### `S3` — Human-in-the-Loop Correction & Memory Feedback
+- **Expert Challenge & Override**: Support leads can refine, challenge, or modify AI triage recommendations.
+- **Immediate Ingestion**: Human corrections are immediately packaged as structured experiences and written into Hindsight memory, becoming active knowledge for all future tickets.
+
+#### `S4` — Experience Evolution & Knowledge Drift Tracking
+- **Precedent Superseding**: As infrastructure evolves (e.g. migrating from MySQL 8.0 to CockroachDB), older precedents are updated or marked as superseded.
+- **Continuous Learning Telemetry**: Live alignment score tracking (T1: 62% &rarr; T5: 94.8%) with real-time SVG polyline milestone visualization.
+
+#### `S5` — Conflict & Invariant Boundary Resolution
+- **Contradiction Detection**: Explicitly reconciles conflicting precedents (e.g. why increasing timeout succeeded in EXP-067 but failed in EXP-031).
+- **Hard Invariant Enforcement**: Non-negotiable organizational rules (such as EXP-089: database connection leases strictly capped at 12 minutes) that models cannot override.
+
+### A-Tier Capabilities (Operational Telemetry & Safety)
+
+#### `A1` — Experience Confidence & Freshness Scoring
+- **Validation Recency**: Precedents carry confidence weights based on validation frequency and recency.
+- **Sample Size Weighting**: Distinguishes between one-off heuristics (weight: 0.32) and hardened enterprise patterns (weight: 0.95).
+
+#### `A2` — Real Data Grounding & Telemetry Extraction
+- **Zero Hallucination Telemetry**: Binds triage decisions to live infrastructure parameters (payload size, DB pool contention, thread queues).
+- **Terminal CLI Stream (Process 3751)**: Live-streamed terminal trace matching real-world debugging workflows.
+
+#### `A3` — Deterministic Outcome Predictor & Guardian
+- **Simulation Before Execution**: Every proposed mitigation is simulated against deterministic domain models to compute resolution time, escalation probability, and pool contention.
+- **Zero-Cascade Clearance**: Guardian rejects actions that have an escalation probability > 15% or violate pool hold limits.
+
+---
+
+## ⚡ 5. Tiered Groq LLM Strategy (Cost-Optimized Dual-Engine)
+
+Echo utilizes an intelligent **tiered model routing architecture** to deliver state-of-the-art reasoning while keeping operational inference costs at minimum:
 
 ```text
                        Incoming User Interaction
@@ -114,7 +185,7 @@ Echo utilizes an intelligent **tiered model routing architecture** to deliver hi
 
 ---
 
-## 🔄 The 12-Event Closed Learning Loop
+## 🔄 6. The 12-Event Closed Learning Loop
 
 The system operates across a verified 12-event lifecycle emitted via WebSocket (`/ws/case`) and REST (`/api/chat`):
 
@@ -135,7 +206,7 @@ The system operates across a verified 12-event lifecycle emitted via WebSocket (
 
 ---
 
-## 🚀 One-Command Deployment
+## 🚀 7. One-Command Deployment
 
 The repository is built for **instant, zero-config deployment** with multi-stage Docker builds.
 
@@ -163,7 +234,7 @@ docker compose up -d --build
 
 ---
 
-## 🧪 Verification & Benchmark Results
+## 🧪 8. Verification & Benchmark Evidence
 
 Echo has passed all verification tiers with 100% test success:
 
@@ -179,10 +250,37 @@ Echo has passed all verification tiers with 100% test success:
 - Strict session persistence across page refreshes
 ```
 
-### Key Benchmark Scenario (Acme Corp 600 GB Batch Contention)
-- **Baseline Trial (Turn 1)**: Naive timeout extension fails. Triggers pool lock saturation. Retained as failure precedent `EXP-031`.
-- **Memory-Informed Resolution (Turn 2)**: Echo recalls `EXP-031`, flags timeout as contraindicated, enforces `EXP-089` pool boundary (<12m), and shifts to `EXP-044` async chunked export. Result completes in 110 minutes with 0 escalation.
-- **Scale Boundary Protection (Turn 3)**: Echo prevents blind transfer of `EXP-044` heavy batch memory to a small 20 GB interactive export, enforcing `EXP-067` scale bounds.
+---
+
+## 📂 9. Repository Layout
+
+```text
+Echo/
+├── backend/
+│   ├── app/
+│   │   ├── agents/          # The 6 specialized agents (Groq copilot, investigator, reasoner)
+│   │   ├── api/             # FastAPI REST endpoints & WebSocket (/ws/case, /api/chat)
+│   │   ├── core/            # Domain models, schemas, and 12-event pipeline
+│   │   ├── db/              # Persistent SQLite database & auth storage
+│   │   ├── memory/          # Hindsight client, local fallback, and vectorizer
+│   │   └── simulator/       # Deterministic outcome simulator & guardian invariants
+│   ├── tests/               # 78 comprehensive pytest unit and integration tests
+│   └── Dockerfile           # Backend container definition
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # Near-Black components (LandingPage, AuthModal, GraphDock)
+│   │   ├── data/            # 15 seed cases & incident archetypes
+│   │   ├── services/        # REST and WebSocket client connectors
+│   │   ├── App.jsx          # Main application shell & real-time telemetry dock
+│   │   └── main.jsx         # React DOM mount point
+│   ├── Dockerfile           # Multi-stage Vite + NGINX reverse-proxy container
+│   └── package.json
+│
+├── brain/                   # Architecture specs & ECHO_EXTENSIONS_MASTER_INTEGRATION.md
+├── docker-compose.yml       # Resilient multi-container deployment
+└── README.md                # Master documentation
+```
 
 ---
 
